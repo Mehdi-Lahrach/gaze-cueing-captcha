@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gaze Cueing Task</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; color: #111; font-family: system-ui, "Segoe UI", Arial, sans-serif; overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #stim { display: block; }
+  #fb { position: fixed; left: 0; right: 0; top: 14%; text-align: center; font-size: 30px; font-weight: 600; display: none; }
+  #text { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; background: #fff; overflow: auto; }
+  .card { max-width: 720px; line-height: 1.55; font-size: 18px; }
+  .card h1 { font-size: 26px; margin: 0 0 12px; }
+  .card p { margin: 10px 0; }
+  .key { display: inline-block; border: 1px solid #333; border-radius: 4px; padding: 0 9px; font-family: ui-monospace, Consolas, monospace; font-weight: 700; }
+  button { font-size: 16px; padding: 9px 16px; margin: 10px 8px 0 0; cursor: pointer; border: 1px solid #333; background: #fff; border-radius: 4px; }
+  button:hover { background: #f1f1f1; }
+  table { border-collapse: collapse; margin: 10px 0; font-size: 15px; }
+  td, th { border: 1px solid #ccc; padding: 4px 10px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  .muted { color: #666; font-size: 14px; }
+  .hidecursor { cursor: none; }
+</style>
+</head>
+<body>
+<div id="stage"><svg id="stim" xmlns="http://www.w3.org/2000/svg"></svg></div>
+<div id="fb"></div>
+<div id="text"><div class="card" id="card"></div></div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   CONFIG SWITCHES
+   Every key below can be overridden from the URL, e.g.
+     index.html?preset=short&responseTask=discrimination&soas=300,700
+   Arrays are comma separated, booleans are 1/0 or true/false.
+   ===================================================================== */
+const DEFAULTS = {
+  preset: 'captcha',              // 'captcha' (8-trial detection block agreed 1 Oct 2026) = default, bare link runs it
+                                  // 'full' (validation study) | 'short' (1.5 min localization block)
+
+  // Response task
+  responseTask: 'localization',   // 'detection' (press keyDetect when the target appears; needs catch trials)
+                                  // 'localization' (F = left target, J = right target)
+                                  // 'discrimination' (target is a letter; F = first letter, J = second)
+  keyDetect: ' ',                 // space bar
+  keyLeft: 'f',
+  keyRight: 'j',
+  discrimTargets: ['T', 'L'],     // letters used in discrimination mode
+  discrimMapping: 'TL',           // 'TL': T -> keyLeft, L -> keyRight. 'LT' reverses it.
+
+  // Trial timing (ms)
+  directGazeMs: 1000,             // face looks at the participant before the gaze shift
+  directGazeJitterMs: 0,          // total uniform jitter around directGazeMs (400 = 800..1200 ms); defeats rhythm responding
+  soas: [300, 1000],              // gaze shift -> target onset, randomised across trials
+  gazeShift: 'abrupt',            // 'abrupt' (one frame) | 'animated' (pupils glide over gazeAnimMs)
+  gazeAnimMs: 120,
+  targetTimeoutMs: 1500,          // response window after target onset
+  catchHoldMs: 1500,              // how long a catch trial waits with no target
+  itiMs: 700,                     // blank between trials
+  itiJitterMs: 300,               // uniform jitter added to itiMs
+  feedbackMs: 600,                // practice feedback duration
+
+  // Design
+  repsPerCell: 16,                // trials per gaze x targetSide x SOA cell (at cueValidity 0.5)
+  cueValidity: 0.5,               // proportion of congruent trials; 0.2 gives a counter-predictive block
+  catchProportion: 0.10,          // catch trials as a fraction of experimental trials
+  catchCount: 0,                  // absolute number of catch trials; overrides catchProportion when > 0
+  blockDesign: 'random',          // 'random': shuffle everything, split into `blocks`
+                                  // 'balanced': blocks of 4, each with gaze L/R x compatible/incompatible once (Brent's design)
+  blocks: 4,                      // number of blocks in 'random' design (ignored for 'balanced')
+  blockBreaks: true,              // show a break screen between blocks
+  practiceTrials: 12,
+  practiceFeedback: true,
+
+  // Geometry (px). About 40 px per degree on a 96 dpi laptop at 60 cm.
+  faceDiameter: 260,
+  eyeDiameter: 44,
+  eyeOffsetX: 50,                 // eye centre distance from face centre
+  eyeOffsetY: -35,                // eyes above face centre
+  pupilDiameter: 20,
+  pupilShift: 14,                 // pupil displacement on gaze shift
+  targetEcc: 350,                 // target distance from screen centre
+  targetSize: 40,
+  background: '#ffffff',
+  ink: '#111111',
+
+  // Session
+  fullscreen: true,
+  showSummary: false,             // show the cueing effect to the participant at the end
+  dataUrl: '',                    // if set, the JSON record is POSTed here at the end
+  completionUrl: '',              // if set, a "Finish" link to this URL (e.g. Prolific completion) is shown
+  pid: '',                        // participant id; also read from ?PROLIFIC_PID=
+};
+
+const PRESETS = {
+  // Agreed spec (Hugo's recap, 1 Oct 2026): detection with space bar, ~1 s direct gaze, target 250 ms after
+  // the gaze shift, 8 trials in blocks of 4 covering all four configurations. Added on top: gaze jitter and
+  // 2 catch trials so that responses cannot be made on rhythm. repsPerCell=4 gives the 16-trial pilot version.
+  captcha: { responseTask: 'detection', soas: [250], directGazeMs: 1000, directGazeJitterMs: 400,
+             repsPerCell: 2, cueValidity: 0.5, blockDesign: 'balanced', blockBreaks: false,
+             catchCount: 2, catchProportion: 0, practiceTrials: 2, itiMs: 600, itiJitterMs: 300 },
+  full:  {},
+  short: { soas: [300], directGazeMs: 675, repsPerCell: 8, catchProportion: 0, blocks: 1,
+           practiceTrials: 4, itiMs: 500, itiJitterMs: 200 },
+};
+
+/* ---------------- config resolution ---------------- */
+const url = new URLSearchParams(location.search);
+const presetName = url.get('preset') || DEFAULTS.preset;
+const cfg = Object.assign({}, DEFAULTS, PRESETS[presetName] || {}, { preset: presetName });
+for (const k of Object.keys(DEFAULTS)) {
+  if (!url.has(k) || k === 'preset') continue;
+  const v = url.get(k), d = DEFAULTS[k];
+  if (Array.isArray(d)) cfg[k] = v.split(',').map(x => (x.trim() !== '' && !isNaN(x)) ? Number(x) : x.trim());
+  else if (typeof d === 'number') cfg[k] = Number(v);
+  else if (typeof d === 'boolean') cfg[k] = (v === '1' || v === 'true');
+  else cfg[k] = v;
+}
+cfg.pid = cfg.pid || url.get('PROLIFIC_PID') || ('anon-' + Math.random().toString(36).slice(2, 8));
+cfg.keyLeft = cfg.keyLeft.toLowerCase(); cfg.keyRight = cfg.keyRight.toLowerCase();
+cfg.keyDetect = (cfg.keyDetect === 'space' ? ' ' : cfg.keyDetect).toLowerCase();
+const isResponseKey = k => cfg.responseTask === 'detection' ? k === cfg.keyDetect : (k === cfg.keyLeft || k === cfg.keyRight);
+const keyName = k => k === ' ' ? 'SPACE' : k.toUpperCase();
+
+/* ---------------- helpers ---------------- */
+const $ = s => document.querySelector(s);
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const other = s => s === 'left' ? 'right' : 'left';
+let FRAME = 16.7, refreshHz = 60, drops = 0;
+
+async function waitUntil(t) {
+  // Returns the timestamp of the first frame at or after t (minus half a frame), counting dropped frames.
+  let ts = await nextFrame();
+  while (ts < t - FRAME / 2) {
+    const n = await nextFrame();
+    if (n - ts > FRAME * 1.5) drops++;
+    ts = n;
+  }
+  return ts;
+}
+
+async function estimateRefresh(n = 90) {
+  const t = []; let prev = await nextFrame();
+  for (let i = 0; i < n; i++) { const ts = await nextFrame(); t.push(ts - prev); prev = ts; }
+  t.sort((a, b) => a - b);
+  FRAME = t[Math.floor(t.length / 2)];
+  refreshHz = Math.round(1000 / FRAME);
+}
+
+/* ---------------- stimulus ---------------- */
+const svg = $('#stim');
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+let W, H, CX, CY;
+const parts = { pupils: [], targets: {} };
+
+function buildStim() {
+  W = innerWidth; H = innerHeight; CX = W / 2; CY = H / 2;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.innerHTML = '';
+  parts.pupils = []; parts.targets = {};
+  const ey = CY + cfg.eyeOffsetY;
+  const g = el('g', {});
+  g.appendChild(el('circle', { cx: CX, cy: CY, r: cfg.faceDiameter / 2, fill: cfg.background, stroke: cfg.ink, 'stroke-width': 4 }));
+  for (const s of [-1, 1]) {
+    const ex = CX + s * cfg.eyeOffsetX;
+    g.appendChild(el('circle', { cx: ex, cy: ey, r: cfg.eyeDiameter / 2, fill: cfg.background, stroke: cfg.ink, 'stroke-width': 3 }));
+    const p = el('circle', { cx: ex, cy: ey, r: cfg.pupilDiameter / 2, fill: cfg.ink });
+    p.dataset.ex = ex; g.appendChild(p); parts.pupils.push(p);
+  }
+  const D = cfg.faceDiameter;   // nose and mouth scale with the face
+  g.appendChild(el('circle', { cx: CX, cy: CY + 0.046 * D, r: Math.max(3, D / 52), fill: cfg.ink }));
+  g.appendChild(el('path', { d: `M ${CX - 0.173 * D} ${CY + 0.21 * D} Q ${CX} ${CY + 0.315 * D} ${CX + 0.173 * D} ${CY + 0.21 * D}`, fill: 'none', stroke: cfg.ink, 'stroke-width': Math.max(2, D / 65), 'stroke-linecap': 'round' }));
+  svg.appendChild(g);
+  for (const side of ['left', 'right']) {
+    const tx = CX + (side === 'left' ? -1 : 1) * cfg.targetEcc;
+    let t;
+    if (cfg.responseTask === 'discrimination') {
+      t = el('text', { x: tx, y: ey, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': cfg.targetSize * 1.5, 'font-family': 'Arial, Helvetica, sans-serif', 'font-weight': '700', fill: cfg.ink });
+    } else {
+      t = el('rect', { x: tx - cfg.targetSize / 2, y: ey - cfg.targetSize / 2, width: cfg.targetSize, height: cfg.targetSize, fill: cfg.ink });
+    }
+    t.setAttribute('visibility', 'hidden');
+    svg.appendChild(t); parts.targets[side] = t;
+  }
+}
+function setGaze(dir, frac = 1) {
+  const s = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
+  for (const p of parts.pupils) p.setAttribute('cx', Number(p.dataset.ex) + s * cfg.pupilShift * frac);
+}
+function animateGaze(dir, start) {
+  (async () => {
+    let ts = start;
+    while (ts - start < cfg.gazeAnimMs) { ts = await nextFrame(); setGaze(dir, Math.min(1, (ts - start) / cfg.gazeAnimMs)); }
+    setGaze(dir, 1);
+  })();
+}
+const showFace = v => { svg.style.visibility = v ? 'visible' : 'hidden'; };
+function showTarget(side, letter) {
+  for (const s in parts.targets) parts.targets[s].setAttribute('visibility', s === side ? 'visible' : 'hidden');
+  if (side && letter) parts.targets[side].textContent = letter;
+}
+addEventListener('resize', () => { const g = currentGaze; buildStim(); setGaze(g); });
+let currentGaze = 'center';
+
+/* ---------------- static frame mode (for LLM stimuli / screenshots) ----------------
+   index.html?frame=1&gaze=left&target=right[&letter=T][&png=1]
+   gaze: center|left|right   target: none|left|right   png=1 downloads the frame as PNG */
+if (url.get('frame') === '1') {
+  document.body.classList.add('hidecursor');
+  buildStim();
+  const gaze = url.get('gaze') || 'center', target = url.get('target') || 'none';
+  setGaze(gaze); currentGaze = gaze;
+  showTarget(target === 'none' ? null : target, url.get('letter') || cfg.discrimTargets[0]);
+  if (url.get('png') === '1') downloadPng(`frame_gaze-${gaze}_target-${target}${url.get('letter') ? '_' + url.get('letter') : ''}.png`);
+  return;
+}
+function downloadPng(name) {
+  const data = new XMLSerializer().serializeToString(svg);
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d'); ctx.fillStyle = cfg.background; ctx.fillRect(0, 0, W, H); ctx.drawImage(img, 0, 0);
+    const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download = name; a.click();
+  };
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(data);
+}
+
+/* ---------------- trial list ---------------- */
+function correctKey(t) {
+  if (t.type === 'catch') return null;
+  if (cfg.responseTask === 'detection') return cfg.keyDetect;
+  if (cfg.responseTask === 'discrimination') return t.letter === cfg.discrimMapping[0] ? cfg.keyLeft : cfg.keyRight;
+  return t.target === 'left' ? cfg.keyLeft : cfg.keyRight;
+}
+function makeCatch(i) {
+  return { type: 'catch', gaze: i % 2 ? 'left' : 'right', soa: cfg.soas[i % cfg.soas.length], congruent: null, target: null, letter: null };
+}
+function makeExpTrial(gaze, soa, congruent) {
+  return { type: 'exp', gaze, soa, congruent, target: congruent ? gaze : other(gaze),
+           letter: cfg.responseTask === 'discrimination' ? cfg.discrimTargets[Math.random() < 0.5 ? 0 : 1] : null };
+}
+function makeTrials() {
+  let trials = [];
+  for (const soa of cfg.soas) for (const gaze of ['left', 'right']) {
+    const n = cfg.repsPerCell * 2, nCong = Math.round(n * cfg.cueValidity);
+    for (let i = 0; i < n; i++) trials.push(makeExpTrial(gaze, soa, i < nCong));
+  }
+  const nCatch = cfg.catchCount > 0 ? cfg.catchCount : Math.round(trials.length * cfg.catchProportion);
+  const catches = []; for (let i = 0; i < nCatch; i++) catches.push(makeCatch(i));
+
+  if (cfg.blockDesign === 'balanced') {
+    // Blocks of 4: one trial of each gaze x compatibility configuration per block, order shuffled within block.
+    const keys = ['leftC', 'leftI', 'rightC', 'rightI'], pools = {};
+    for (const k of keys) pools[k] = [];
+    for (const t of trials) pools[t.gaze + (t.congruent ? 'C' : 'I')].push(t);
+    for (const k of keys) shuffle(pools[k]);
+    const nBlocks = Math.max(1, Math.min(...keys.map(k => pools[k].length)));
+    const blocks = [];
+    for (let b = 0; b < nBlocks; b++) blocks.push(shuffle(keys.map(k => pools[k].pop()).filter(Boolean)));
+    const leftovers = shuffle(keys.flatMap(k => pools[k]));          // only when cueValidity != 0.5
+    if (leftovers.length) blocks[blocks.length - 1].push(...leftovers);
+    // Catch trials spread over blocks, never as the first trial of a block.
+    catches.forEach((c, i) => { const blk = blocks[i % blocks.length]; blk.splice(1 + Math.floor(Math.random() * blk.length), 0, c); });
+    trials = blocks.flatMap((blk, i) => blk.map(t => Object.assign(t, { block: i + 1 })));
+  } else {
+    trials = shuffle(trials.concat(catches));
+    const per = Math.ceil(trials.length / cfg.blocks);
+    trials.forEach((t, i) => { t.block = Math.floor(i / per) + 1; });
+  }
+  trials.forEach((t, i) => { t.trial = i + 1; });
+  return trials;
+}
+function makePractice() {
+  const p = [];
+  for (let i = 0; i < cfg.practiceTrials; i++) {
+    const gaze = i % 2 ? 'left' : 'right', soa = cfg.soas[i % cfg.soas.length];
+    p.push(makeExpTrial(gaze, soa, Math.random() < cfg.cueValidity));
+  }
+  shuffle(p);
+  p.forEach((t, i) => { t.type = 'practice'; t.block = 0; t.trial = i + 1; });
+  return p;
+}
+
+/* ---------------- input ---------------- */
+let lastPress = null, listening = false;
+addEventListener('keydown', e => {
+  if (e.repeat) return;
+  const k = e.key.toLowerCase();
+  if (listening && isResponseKey(k) && !lastPress) { lastPress = { key: k, t: performance.now() }; e.preventDefault(); }
+});
+
+/* ---------------- screens ---------------- */
+function showText(html, { button = 'Continue', keys = [' ', 'enter'] } = {}) {
+  return new Promise(resolve => {
+    const box = $('#text'), card = $('#card');
+    card.innerHTML = html + (button ? `<p><button id="cont">${button}</button> <span class="muted">or press Space</span></p>` : '');
+    box.style.display = 'flex';
+    const done = () => { removeEventListener('keydown', onKey); box.style.display = 'none'; resolve(); };
+    const onKey = e => { if (keys.includes(e.key.toLowerCase())) { e.preventDefault(); done(); } };
+    addEventListener('keydown', onKey);
+    const b = $('#cont'); if (b) b.onclick = done;
+  });
+}
+async function feedback(msg) {
+  const fb = $('#fb'); fb.textContent = msg; fb.style.display = 'block';
+  await sleep(cfg.feedbackMs); fb.style.display = 'none';
+}
+
+/* ---------------- one trial ---------------- */
+const data = [];
+let prevCongruent = null, prevTarget = null;
+// Browsers throttle animation frames to about 1 per second in hidden tabs, which destroys the timing.
+// Wait for the tab to be visible before each trial and flag any trial during which it was hidden.
+let hiddenDuringTrial = false;
+document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') hiddenDuringTrial = true; });
+async function ensureVisible() {
+  if (document.visibilityState === 'visible') return;
+  const box = $('#text'), card = $('#card');
+  card.innerHTML = `<h1>Paused</h1><p>Please return to this tab. The task continues by itself.</p>`;
+  box.style.display = 'flex';
+  await new Promise(res => { const h = () => { if (document.visibilityState === 'visible') { document.removeEventListener('visibilitychange', h); res(); } }; document.addEventListener('visibilitychange', h); });
+  box.style.display = 'none';
+  await sleep(500);
+}
+async function runTrial(t, practice) {
+  await ensureVisible();
+  drops = 0; lastPress = null; listening = true; hiddenDuringTrial = false;
+  const itiIntended = cfg.itiMs + Math.random() * cfg.itiJitterMs;
+  const directIntended = cfg.directGazeMs + (Math.random() - 0.5) * cfg.directGazeJitterMs;
+  const rec = {
+    pid: cfg.pid, block: t.block, trial: t.trial, type: t.type, gaze: t.gaze, target: t.target, letter: t.letter,
+    soa: t.soa, congruent: t.congruent, prev_congruent: prevCongruent, prev_target: prevTarget,
+    response: null, correct: null, rt_ms: null, anticipation: false,
+    iti_intended: Math.round(itiIntended), iti_actual: null,
+    direct_intended: Math.round(directIntended), direct_actual: null,
+    soa_intended: t.soa, soa_actual: null,
+    dropped_frames: null, tab_hidden: false, t_target_onset: null,
+  };
+
+  // 1. inter-trial blank
+  const t0 = await nextFrame();
+  showFace(false); showTarget(null); setGaze('center'); currentGaze = 'center';
+  // 2. face with direct gaze
+  const tFace = await waitUntil(t0 + itiIntended); showFace(true);
+  // 3. gaze shift
+  const tCue = await waitUntil(tFace + directIntended);
+  if (cfg.gazeShift === 'animated') animateGaze(t.gaze, tCue); else setGaze(t.gaze);
+  currentGaze = t.gaze;
+  // 4. SOA, then target (or nothing on catch trials)
+  const tTarget = await waitUntil(tCue + t.soa);
+  rec.iti_actual = +(tFace - t0).toFixed(1);
+  rec.direct_actual = +(tCue - tFace).toFixed(1);
+  rec.soa_actual = +(tTarget - tCue).toFixed(1);
+  rec.t_target_onset = +tTarget.toFixed(1);
+
+  if (lastPress) {                       // pressed before the target could appear
+    rec.anticipation = true; rec.response = lastPress.key; rec.correct = false;
+  } else if (t.type === 'catch') {
+    let ts = tTarget;
+    while (!lastPress && ts < tTarget + cfg.catchHoldMs) { const n = await nextFrame(); if (n - ts > FRAME * 1.5) drops++; ts = n; }
+    rec.response = lastPress ? lastPress.key : null;
+    rec.correct = !lastPress;
+    if (lastPress) rec.rt_ms = +(lastPress.t - tTarget).toFixed(1);
+  } else {
+    showTarget(t.target, t.letter);
+    let ts = tTarget;
+    while (!lastPress && ts < tTarget + cfg.targetTimeoutMs) { const n = await nextFrame(); if (n - ts > FRAME * 1.5) drops++; ts = n; }
+    showTarget(null);
+    if (lastPress) {
+      rec.response = lastPress.key; rec.rt_ms = +(lastPress.t - tTarget).toFixed(1);
+      rec.correct = lastPress.key === correctKey(t);
+    } else { rec.correct = false; }
+  }
+  listening = false;
+  rec.dropped_frames = drops; rec.tab_hidden = hiddenDuringTrial;
+  showFace(false);
+  if (t.type !== 'practice') { prevCongruent = t.congruent; prevTarget = t.target; }
+  data.push(rec);
+
+  if (practice && cfg.practiceFeedback) {
+    let msg;
+    if (rec.anticipation) msg = 'Too early: wait for the target';
+    else if (t.type === 'catch') msg = rec.correct ? 'Correct: no target, no key' : 'No target appeared: do not press';
+    else if (rec.response === null) msg = 'Too slow';
+    else msg = rec.correct ? 'Correct' : 'Wrong key';
+    await feedback(msg);
+  } else if (!practice && rec.anticipation) {
+    await feedback('Too early: wait for the target');   // anticipations are flagged even in the real block
+  }
+}
+
+/* ---------------- instructions ---------------- */
+function instructions() {
+  const L = `<span class="key">${keyName(cfg.keyLeft)}</span>`, R = `<span class="key">${keyName(cfg.keyRight)}</span>`;
+  if (cfg.responseTask === 'detection') {
+    const D = `<span class="key">${keyName(cfg.keyDetect)}</span>`;
+    return `<h1>Instructions</h1>
+      <p>On each trial a cartoon face appears in the centre of the screen. Keep your eyes on the face the whole time.</p>
+      <p>After a moment the face will look to the left or to the right. Shortly after, a black square will appear on the left or the right of the face.</p>
+      <p><b>Press ${D} as soon as the square appears.</b> It does not matter which side it is on.</p>
+      <p><b>Where the face looks tells you nothing about where or when the square will appear.</b> Ignore it.</p>
+      <p>On some trials no square appears. Then do not press anything. Pressing before the square appears counts as an error.</p>
+      <p>Respond as fast as you can. Put your finger on ${D} now.</p>
+      <p>You will start with ${cfg.practiceTrials} practice trial${cfg.practiceTrials === 1 ? '' : 's'} with feedback.</p>`;
+  }
+  const targetDesc = cfg.responseTask === 'discrimination'
+    ? `a letter <b>${cfg.discrimTargets[0]}</b> or <b>${cfg.discrimTargets[1]}</b> will appear on the left or the right of the face.
+       Press ${L} if it is a <b>${cfg.discrimMapping[0]}</b> and ${R} if it is a <b>${cfg.discrimMapping[1]}</b>, whichever side it is on.`
+    : `a black square will appear on the left or the right of the face.
+       Press ${L} if it appears on the <b>left</b> and ${R} if it appears on the <b>right</b>.`;
+  const catchDesc = cfg.catchProportion > 0 ? `<p>On a few trials nothing appears. Then do not press anything.</p>` : '';
+  return `<h1>Instructions</h1>
+    <p>On each trial a cartoon face appears in the centre of the screen. Keep your eyes on the face the whole time.</p>
+    <p>After a moment the face will look to the left or to the right. Shortly after, ${targetDesc}</p>
+    <p><b>Where the face looks tells you nothing about where the target will appear.</b> It is correct half of the time and wrong half of the time, so ignore it.</p>
+    <p>Respond as fast as you can without making mistakes. Place your left index finger on ${L} and your right index finger on ${R} now.</p>
+    ${catchDesc}
+    <p>You will start with a few practice trials with feedback.</p>`;
+}
+
+/* ---------------- output ---------------- */
+const session = { pid: cfg.pid, start: new Date().toISOString(), end: null, config: cfg,
+  env: { ua: navigator.userAgent, viewport_w: innerWidth, viewport_h: innerHeight, dpr: devicePixelRatio, refresh_hz: null, screen_w: screen.width, screen_h: screen.height } };
+
+function summary() {
+  const ok = data.filter(d => d.type === 'exp' && d.correct && d.rt_ms !== null && d.rt_ms >= 100);
+  const out = [];
+  for (const soa of cfg.soas) {
+    const c = ok.filter(d => d.soa === soa && d.congruent).map(d => d.rt_ms);
+    const i = ok.filter(d => d.soa === soa && !d.congruent).map(d => d.rt_ms);
+    const m = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN;
+    out.push({ soa, nC: c.length, nI: i.length, mC: m(c), mI: m(i), effect: m(i) - m(c) });
+  }
+  const exp = data.filter(d => d.type === 'exp');
+  const acc = exp.length ? exp.filter(d => d.correct).length / exp.length : NaN;
+  const catchT = data.filter(d => d.type === 'catch');
+  const fa = catchT.length ? catchT.filter(d => !d.correct).length / catchT.length : NaN;
+  return { rows: out, accuracy: acc, falseAlarms: fa, nTrials: exp.length };
+}
+function toCsv(rows) {
+  const cols = Object.keys(rows[0]);
+  const esc = v => v === null || v === undefined ? '' : (typeof v === 'string' && /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : String(v));
+  return [cols.join(','), ...rows.map(r => cols.map(c => esc(r[c])).join(','))].join('\n');
+}
+function download(name, text, type) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click();
+}
+
+/* ---------------- main ---------------- */
+async function main() {
+  buildStim(); showFace(false);
+  await estimateRefresh();
+  session.env.refresh_hz = refreshHz;
+
+  const mins = estimateMinutes();
+  await showText(`<h1>Attention task</h1>
+    <p>This task takes ${mins < 1.5 ? 'about a minute' : 'about ' + Math.round(mins) + ' minutes'}. Please sit about an arm's length from the screen, in a quiet place, and close other windows.</p>
+    <p>You will respond with the keyboard, so make sure it is within reach.</p>
+    <p class="muted">Participant: ${cfg.pid} · preset: ${cfg.preset} · ${cfg.responseTask} · SOA ${cfg.soas.join('/')} ms · display ${refreshHz} Hz</p>`,
+    { button: 'Start' });
+  if (cfg.fullscreen) { try { await document.documentElement.requestFullscreen(); await sleep(400); buildStim(); } catch (e) {} }
+  session.env.fullscreen_granted = !!document.fullscreenElement;
+  await ensureWindowSize();
+  await showText(instructions(), { button: 'Start practice' });
+
+  document.body.classList.add('hidecursor');
+  if (cfg.practiceTrials > 0) {
+    for (const t of makePractice()) await runTrial(t, true);
+    document.body.classList.remove('hidecursor');
+    await showText(`<h1>Practice finished</h1><p>The real trials start now. There is no more feedback. Keep your eyes on the face, and remember that its gaze does not tell you where the target will appear.</p>`, { button: 'Start' });
+    document.body.classList.add('hidecursor');
+  }
+
+  const trials = makeTrials();
+  const nBlocks = trials[trials.length - 1].block;
+  let block = 0;
+  for (const t of trials) {
+    if (t.block !== block) {
+      if (block > 0 && cfg.blockBreaks) {
+        document.body.classList.remove('hidecursor');
+        await showText(`<h1>Break</h1><p>Block ${block} of ${nBlocks} finished. Take a short rest. Press Space when you are ready to continue.</p>`, { button: 'Continue' });
+        document.body.classList.add('hidecursor');
+      }
+      block = t.block;
+    }
+    await runTrial(t, false);
+  }
+  document.body.classList.remove('hidecursor');
+  session.end = new Date().toISOString();
+  if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch (e) {} }
+  await finish();
+}
+
+// Both targets and the face must fit on screen; otherwise the task is invalid.
+async function ensureWindowSize() {
+  const needW = 2 * cfg.targetEcc + cfg.targetSize + 40, needH = cfg.faceDiameter + 120;
+  const ok = () => innerWidth >= needW && innerHeight >= needH;
+  if (ok()) return;
+  const box = $('#text'), card = $('#card');
+  box.style.display = 'flex';
+  await new Promise(resolve => {
+    const render = () => {
+      if (ok()) { removeEventListener('resize', render); box.style.display = 'none'; buildStim(); resolve(); return; }
+      card.innerHTML = `<h1>Your window is too small</h1>
+        <p>This task needs a window of at least ${needW} by ${needH} pixels. Yours is ${innerWidth} by ${innerHeight}.</p>
+        <p>Please maximise the browser window, or use a laptop or desktop screen. The task continues automatically once the window is large enough.</p>`;
+    };
+    addEventListener('resize', render); render();
+  });
+  session.env.viewport_w = innerWidth; session.env.viewport_h = innerHeight;
+}
+
+function estimateMinutes() {
+  const nExp = cfg.repsPerCell * 2 * 2 * cfg.soas.length;
+  const nCatch = cfg.catchCount > 0 ? cfg.catchCount : Math.round(nExp * cfg.catchProportion);
+  const meanSoa = cfg.soas.reduce((a, b) => a + b, 0) / cfg.soas.length;
+  const perTrial = cfg.itiMs + cfg.itiJitterMs / 2 + cfg.directGazeMs + meanSoa + 450;
+  const ms = (nExp + cfg.practiceTrials) * perTrial + nCatch * (perTrial - 450 + cfg.catchHoldMs) + 45000;
+  return ms / 60000;
+}
+
+async function finish() {
+  const s = summary();
+  const record = { session, summary: s, trials: data };
+  try { localStorage.setItem('gaze_cueing_' + cfg.pid, JSON.stringify(record)); } catch (e) {}
+  let posted = '';
+  if (cfg.dataUrl) {
+    try {
+      const r = await fetch(cfg.dataUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(record) });
+      posted = r.ok ? '<p>Your data has been saved.</p>' : '<p>Saving failed. Please download the file below and send it to the researcher.</p>';
+    } catch (e) { posted = '<p>Saving failed. Please download the file below and send it to the researcher.</p>'; }
+  }
+  const table = cfg.showSummary ? `<table><tr><th>SOA</th><th>Congruent RT</th><th>Incongruent RT</th><th>Cueing effect</th></tr>
+    ${s.rows.map(r => `<tr><td>${r.soa} ms</td><td>${r.mC.toFixed(0)} ms (${r.nC})</td><td>${r.mI.toFixed(0)} ms (${r.nI})</td><td>${r.effect.toFixed(1)} ms</td></tr>`).join('')}</table>
+    <p class="muted">Accuracy ${(s.accuracy * 100).toFixed(1)}%${isNaN(s.falseAlarms) ? '' : `, catch-trial false alarms ${(s.falseAlarms * 100).toFixed(0)}%`}</p>` : '';
+  const card = $('#card'), box = $('#text');
+  card.innerHTML = `<h1>Finished, thank you</h1>${posted}${table}
+    <p><button id="dl-csv">Download CSV</button><button id="dl-json">Download JSON</button>
+    ${cfg.completionUrl ? `<a href="${cfg.completionUrl}"><button>Finish</button></a>` : ''}</p>
+    <p class="muted">${s.nTrials} experimental trials · participant ${cfg.pid}</p>`;
+  box.style.display = 'flex';
+  const stamp = session.start.replace(/[:.]/g, '-');
+  $('#dl-csv').onclick = () => download(`gaze_cueing_${cfg.pid}_${stamp}.csv`, toCsv(data), 'text/csv');
+  $('#dl-json').onclick = () => download(`gaze_cueing_${cfg.pid}_${stamp}.json`, JSON.stringify(record, null, 1), 'application/json');
+  window.__gazeCueingRecord = record;   // for programmatic access (tests, LLM harness)
+}
+
+main().catch(err => { console.error(err); $('#card').innerHTML = `<h1>Error</h1><pre>${err && err.stack || err}</pre>`; $('#text').style.display = 'flex'; });
+})();
+</script>
+</body>
+</html>
