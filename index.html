@@ -289,11 +289,12 @@ function makePractice() {
 }
 
 /* ---------------- input ---------------- */
-let lastPress = null, listening = false;
+let lastPress = null, listening = false, responseDeadline = Infinity;
 addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = e.key.toLowerCase();
-  if (listening && isResponseKey(k) && !lastPress) { lastPress = { key: k, t: performance.now() }; e.preventDefault(); }
+  // responseDeadline guards against a stalled frame loop (hidden or throttled tab) leaving the window open
+  if (listening && isResponseKey(k) && !lastPress && performance.now() <= responseDeadline) { lastPress = { key: k, t: performance.now() }; e.preventDefault(); }
 });
 
 /* ---------------- screens ---------------- */
@@ -363,6 +364,7 @@ async function runTrial(t, practice) {
   if (lastPress) {                       // pressed before the target could appear
     rec.anticipation = true; rec.response = lastPress.key; rec.correct = false;
   } else if (t.type === 'catch') {
+    responseDeadline = tTarget + cfg.catchHoldMs;
     let ts = tTarget;
     while (!lastPress && ts < tTarget + cfg.catchHoldMs) { const n = await nextFrame(); if (n - ts > FRAME * 1.5) drops++; ts = n; }
     rec.response = lastPress ? lastPress.key : null;
@@ -370,6 +372,7 @@ async function runTrial(t, practice) {
     if (lastPress) rec.rt_ms = +(lastPress.t - tTarget).toFixed(1);
   } else {
     showTarget(t.target, t.letter);
+    responseDeadline = tTarget + cfg.targetTimeoutMs;
     let ts = tTarget;
     while (!lastPress && ts < tTarget + cfg.targetTimeoutMs) { const n = await nextFrame(); if (n - ts > FRAME * 1.5) drops++; ts = n; }
     showTarget(null);
@@ -378,7 +381,7 @@ async function runTrial(t, practice) {
       rec.correct = lastPress.key === correctKey(t);
     } else { rec.correct = false; }
   }
-  listening = false;
+  listening = false; responseDeadline = Infinity;
   rec.dropped_frames = drops; rec.tab_hidden = hiddenDuringTrial;
   showFace(false);
   if (t.type !== 'practice') { prevCongruent = t.congruent; prevTarget = t.target; }
