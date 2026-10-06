@@ -94,6 +94,7 @@ CSV columns, one row per trial:
 | `pid`, `block`, `trial`, `type` | `type` is `practice`, `exp` or `catch` |
 | `gaze`, `target`, `letter`, `soa`, `congruent`, `prev_congruent`, `prev_target` | design variables; `prev_*` refer to the previous experimental or catch trial (a repeated target location speeds the next response) |
 | `response`, `correct`, `rt_ms`, `anticipation` | key, correctness, RT from target onset; `anticipation` = pressed before target onset |
+| `key_trusted` | true for a real keyboard event, false for a key event dispatched by a script inside the page (`event.isTrusted`); the JSON summary counts `untrustedPresses` |
 | `iti_intended`, `iti_actual`, `direct_intended`, `direct_actual`, `soa_intended`, `soa_actual` | planned vs measured durations in ms, from requestAnimationFrame timestamps |
 | `dropped_frames` | frames longer than 1.5 x the display period during the trial |
 | `tab_hidden` | true if the browser tab lost visibility during the trial (browsers then throttle timing to about 1 frame per second); the task pauses before the next trial until the tab is visible again |

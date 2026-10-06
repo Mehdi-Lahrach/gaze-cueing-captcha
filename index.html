@@ -294,7 +294,8 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   const k = e.key.toLowerCase();
   // responseDeadline guards against a stalled frame loop (hidden or throttled tab) leaving the window open
-  if (listening && isResponseKey(k) && !lastPress && performance.now() <= responseDeadline) { lastPress = { key: k, t: performance.now() }; e.preventDefault(); }
+  // e.isTrusted is false for key events dispatched by a script inside the page (a common bot), true for a real keyboard
+  if (listening && isResponseKey(k) && !lastPress && performance.now() <= responseDeadline) { lastPress = { key: k, t: performance.now(), trusted: e.isTrusted === true }; e.preventDefault(); }
 });
 
 /* ---------------- screens ---------------- */
@@ -338,7 +339,7 @@ async function runTrial(t, practice) {
   const rec = {
     pid: cfg.pid, block: t.block, trial: t.trial, type: t.type, gaze: t.gaze, target: t.target, letter: t.letter,
     soa: t.soa, congruent: t.congruent, prev_congruent: prevCongruent, prev_target: prevTarget,
-    response: null, correct: null, rt_ms: null, anticipation: false,
+    response: null, correct: null, rt_ms: null, anticipation: false, key_trusted: null,
     iti_intended: Math.round(itiIntended), iti_actual: null,
     direct_intended: Math.round(directIntended), direct_actual: null,
     soa_intended: t.soa, soa_actual: null,
@@ -382,6 +383,7 @@ async function runTrial(t, practice) {
     } else { rec.correct = false; }
   }
   listening = false; responseDeadline = Infinity;
+  if (lastPress) rec.key_trusted = lastPress.trusted;
   rec.dropped_frames = drops; rec.tab_hidden = hiddenDuringTrial;
   showFace(false);
   if (t.type !== 'practice') { prevCongruent = t.congruent; prevTarget = t.target; }
@@ -445,7 +447,8 @@ function summary() {
   const acc = exp.length ? exp.filter(d => d.correct).length / exp.length : NaN;
   const catchT = data.filter(d => d.type === 'catch');
   const fa = catchT.length ? catchT.filter(d => !d.correct).length / catchT.length : NaN;
-  return { rows: out, accuracy: acc, falseAlarms: fa, nTrials: exp.length };
+  const untrusted = data.filter(d => d.response !== null && d.key_trusted === false).length;
+  return { rows: out, accuracy: acc, falseAlarms: fa, nTrials: exp.length, untrustedPresses: untrusted };
 }
 function toCsv(rows) {
   const cols = Object.keys(rows[0]);
