@@ -76,8 +76,24 @@ https://your.host/gaze-cueing-task/index.html?PROLIFIC_PID={{%PROLIFIC_PID%}}&co
 
 One shared link, a unique id per click, all data tagged with a study label and collected centrally.
 
-1. **Set up the collector once** (free, 5 minutes): create a Google Sheet, open Extensions > Apps Script, paste `apps_script.gs`, deploy as a Web app (execute as me, access: anyone), copy the `/exec` URL. Paste it into `DEFAULTS.dataUrl` in `index.html` and push, or pass it in the link as `dataUrl=`.
-2. **Share one link** with the study label:
+A page on GitHub Pages cannot write files back into GitHub without a secret key, and a key in a public page would let anyone write to the repo, so the data has to go somewhere else. Three ways, simplest first.
+
+**Option A, no accounts at all: run the collector on your laptop.** In the task folder run
+```
+python collector.py
+```
+It prints a link such as `http://192.168.1.23:8731/?study=students-oct2026&askCode=1&repsPerCell=4`. Students on the same Wi-Fi open it (a phone hotspot is the most reliable network; university Wi-Fi sometimes blocks laptop-to-laptop traffic). Every finished run is written to `data/incoming/<pid>.json` and appended to `data/incoming/all_records.jsonl`, a file that is only ever appended to, so a crash cannot corrupt earlier records. Nothing leaves the room.
+
+**Option B, no code: a Google Form.** Create a form with one "paragraph" question, click the three dots > Get pre-filled link, type anything in the box, copy the link and read the `entry.NNNNNNN` part. Share the task link with the form URL and that id:
+```
+...?study=students-oct2026&formUrl=https://docs.google.com/forms/d/e/FORM_ID/viewform&formEntry=entry.NNNNNNN
+```
+Each run lands as one response holding the whole record as JSON; link the form to a Sheet (Responses > Sheets icon) and export. No deployment, no authorisation dialogs.
+
+**Option C, Apps Script to a Google Sheet** (one row per trial, nicer to browse, 5 minutes of setup): create a Sheet, Extensions > Apps Script, paste `apps_script.gs`, Deploy > Web app (execute as me, access: anyone), copy the `/exec` URL and pass it as `dataUrl=` or set `DEFAULTS.dataUrl`.
+
+1. **Pick one of the three** above. Whatever you choose, every trial is also saved in the participant's browser as it happens, and the finish screen has Send again, Copy data and Download JSON.
+2. **Share one link** with the study label (for Option A the collector prints it):
    ```
    https://mehdi-lahrach.github.io/gaze-cueing-captcha/?study=students-oct2026&askCode=1&repsPerCell=4
    ```

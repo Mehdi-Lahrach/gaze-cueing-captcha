@@ -91,7 +91,9 @@ const DEFAULTS = {
   // Session
   fullscreen: true,
   showSummary: false,             // show the cueing effect to the participant at the end
-  dataUrl: '',                    // if set, the JSON record is POSTed here at the end
+  dataUrl: '',                    // if set, the JSON record is POSTed here at the end (collector.py uses /save; Apps Script uses its /exec URL)
+  formUrl: '',                    // alternative with no code: a Google Form's URL (.../viewform) with one paragraph question
+  formEntry: '',                  // that question's field id, e.g. entry.123456789 (from the form's prefilled-link URL)
   completionUrl: '',              // if set, a "Finish" link to this URL (e.g. Prolific completion) is shown
   pid: '',                        // participant id; also read from ?PROLIFIC_PID=
   study: '',                      // study label (e.g. students-oct2026): tags every row and gives each click a unique id study-YYYYMMDD-xxxxxx
@@ -471,6 +473,15 @@ function download(name, text, type) {
 // so "sent" means the request left the browser. sendBeacon is the fallback and also survives the tab closing.
 async function sendRecord(record) {
   const body = JSON.stringify(record);
+  if (cfg.formUrl && cfg.formEntry) {          // Google Form: form-encoded POST, no-cors, lands in the form's response sheet
+    try {
+      const u = cfg.formUrl.replace(/\/viewform.*$/, '') + '/formResponse';
+      const fd = new URLSearchParams(); fd.set(cfg.formEntry, body); fd.set('submit', 'Submit');
+      const r = await fetch(u, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: fd.toString(), keepalive: true });
+      if (r.type === 'opaque' || r.ok) return true;
+    } catch (e) {}
+  }
+  if (!cfg.dataUrl) return false;
   try {
     const r = await fetch(cfg.dataUrl, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body, keepalive: true });
     if (r.type === 'opaque' || r.ok) return true;
@@ -571,7 +582,7 @@ async function finish() {
   const record = { session, summary: s, trials: data };
   try { localStorage.setItem('gaze_cueing_' + cfg.pid, JSON.stringify(record)); } catch (e) {}
   let posted = '';
-  if (cfg.dataUrl) {
+  if (cfg.dataUrl || (cfg.formUrl && cfg.formEntry)) {
     const sent = await sendRecord(record);
     posted = sent ? '<p id="sendstatus">Your data has been sent. Thank you.</p>'
                   : '<p id="sendstatus">Sending failed. Please click "Send again", or download the file below and give it to the researcher.</p>';
@@ -584,7 +595,7 @@ async function finish() {
   const card = $('#card'), box = $('#text');
   card.innerHTML = `<h1>Finished, thank you</h1>${posted}${table}
     <p><button id="dl-csv">Download CSV</button><button id="dl-json">Download JSON</button><button id="copy-json">Copy data</button>
-    ${cfg.dataUrl ? '<button id="resend">Send again</button>' : ''}
+    ${(cfg.dataUrl || cfg.formUrl) ? '<button id="resend">Send again</button>' : ''}
     ${cfg.completionUrl ? `<a href="${cfg.completionUrl}"><button>Finish</button></a>` : ''}</p>
     <p class="muted">${s.nTrials} experimental trials · participant ${cfg.pid}${session.code ? ' · code ' + session.code : ''}</p>`;
   box.style.display = 'flex';
