@@ -72,6 +72,25 @@ Prolific example link:
 https://your.host/gaze-cueing-task/index.html?PROLIFIC_PID={{%PROLIFIC_PID%}}&completionUrl=https://app.prolific.com/submissions/complete?cc=XXXX
 ```
 
+## In-person sessions (students, lab)
+
+One shared link, a unique id per click, all data tagged with a study label and collected centrally.
+
+1. **Set up the collector once** (free, 5 minutes): create a Google Sheet, open Extensions > Apps Script, paste `apps_script.gs`, deploy as a Web app (execute as me, access: anyone), copy the `/exec` URL. Paste it into `DEFAULTS.dataUrl` in `index.html` and push, or pass it in the link as `dataUrl=`.
+2. **Share one link** with the study label:
+   ```
+   https://mehdi-lahrach.github.io/gaze-cueing-captcha/?study=students-oct2026&askCode=1&repsPerCell=4
+   ```
+   Every click gets an id like `students-oct2026-20261022-k3f9q2ab`, so no two students collide and the rows are separate from all test data. `askCode=1` asks for a short code (seat number) so you can match a person to a row if needed; drop it for anonymity. `repsPerCell=4` gives 16 trials (about 70 s) instead of 8, which lets you compute the effect from the first 4, 8, 12 and 16 trials.
+3. **During the session**: laptops, window maximised, keyboard within reach. At the end each student sees "Your data has been sent". If the network fails they can click "Send again", "Copy data" or "Download JSON". Every trial is also saved in the browser's local storage as it happens, so a closed tab loses nothing.
+4. **Afterwards**: in the Sheet, File > Download > CSV for the `trials` tab (and the `sessions` tab, which holds each full record as JSON). Put the files and any downloaded JSON in a folder and run
+   ```
+   python collect_data.py data/raw --study students-oct2026 --out data/students
+   ```
+   which writes one clean trial-level CSV and one per-participant summary (accuracy, anticipations, false alarms, untrusted presses, RT mean and spread, congruent and incongruent means, cueing effect). Duplicates are dropped, so overlapping inputs are safe.
+
+Why this layout: JSON is written at the source and kept whole in the `sessions` tab, so a corrupted or half-exported CSV can always be rebuilt from it; the trial rows exist in three places (Sheet, participant's browser, optional download); and the study label keeps the student data apart from every test run.
+
 ## Static frames for the LLM arm
 
 ```

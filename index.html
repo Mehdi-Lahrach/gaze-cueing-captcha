@@ -94,6 +94,9 @@ const DEFAULTS = {
   dataUrl: '',                    // if set, the JSON record is POSTed here at the end
   completionUrl: '',              // if set, a "Finish" link to this URL (e.g. Prolific completion) is shown
   pid: '',                        // participant id; also read from ?PROLIFIC_PID=
+  study: '',                      // study label (e.g. students-oct2026): tags every row and gives each click a unique id study-YYYYMMDD-xxxxxx
+  askCode: false,                 // ask the participant for a short code (seat number, initials) before the task starts
+  autoDownload: false,            // download the JSON file automatically at the end (local backup when no dataUrl is set)
 };
 
 const PRESETS = {
@@ -120,7 +123,10 @@ for (const k of Object.keys(DEFAULTS)) {
   else if (typeof d === 'boolean') cfg[k] = (v === '1' || v === 'true');
   else cfg[k] = v;
 }
-cfg.pid = cfg.pid || url.get('PROLIFIC_PID') || ('anon-' + Math.random().toString(36).slice(2, 8));
+const randId = () => Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 4);
+const dateTag = () => new Date().toISOString().slice(0, 10).replace(/-/g, '');
+cfg.study = (cfg.study || '').replace(/[^A-Za-z0-9_-]/g, '');
+cfg.pid = cfg.pid || url.get('PROLIFIC_PID') || (cfg.study ? `${cfg.study}-${dateTag()}-${randId()}` : 'anon-' + randId());
 cfg.keyLeft = cfg.keyLeft.toLowerCase(); cfg.keyRight = cfg.keyRight.toLowerCase();
 cfg.keyDetect = (cfg.keyDetect === 'space' ? ' ' : cfg.keyDetect).toLowerCase();
 const isResponseKey = k => cfg.responseTask === 'detection' ? k === cfg.keyDetect : (k === cfg.keyLeft || k === cfg.keyRight);
@@ -304,8 +310,10 @@ function showText(html, { button = 'Continue', keys = [' ', 'enter'] } = {}) {
     const box = $('#text'), card = $('#card');
     card.innerHTML = html + (button ? `<p><button id="cont">${button}</button> <span class="muted">or press Space</span></p>` : '');
     box.style.display = 'flex';
+    const shownAt = performance.now();
     const done = () => { removeEventListener('keydown', onKey); box.style.display = 'none'; resolve(); };
-    const onKey = e => { if (keys.includes(e.key.toLowerCase())) { e.preventDefault(); done(); } };
+    // ignore keys in the first 300 ms so the key that closed the previous screen cannot skip this one
+    const onKey = e => { if (performance.now() - shownAt < 300) return; if (keys.includes(e.key.toLowerCase())) { e.preventDefault(); done(); } };
     addEventListener('keydown', onKey);
     const b = $('#cont'); if (b) b.onclick = done;
   });
@@ -337,7 +345,7 @@ async function runTrial(t, practice) {
   const itiIntended = cfg.itiMs + Math.random() * cfg.itiJitterMs;
   const directIntended = cfg.directGazeMs + (Math.random() - 0.5) * cfg.directGazeJitterMs;
   const rec = {
-    pid: cfg.pid, block: t.block, trial: t.trial, type: t.type, gaze: t.gaze, target: t.target, letter: t.letter,
+    pid: cfg.pid, study: cfg.study, code: session.code, block: t.block, trial: t.trial, type: t.type, gaze: t.gaze, target: t.target, letter: t.letter,
     soa: t.soa, congruent: t.congruent, prev_congruent: prevCongruent, prev_target: prevTarget,
     response: null, correct: null, rt_ms: null, anticipation: false, key_trusted: null,
     iti_intended: Math.round(itiIntended), iti_actual: null,
@@ -388,6 +396,7 @@ async function runTrial(t, practice) {
   showFace(false);
   if (t.type !== 'practice') { prevCongruent = t.congruent; prevTarget = t.target; }
   data.push(rec);
+  try { localStorage.setItem('gaze_cueing_' + cfg.pid, JSON.stringify({ session, trials: data, partial: true })); } catch (e) {}   // survives a closed tab
 
   if (practice && cfg.practiceFeedback) {
     let msg;
@@ -431,7 +440,7 @@ function instructions() {
 }
 
 /* ---------------- output ---------------- */
-const session = { pid: cfg.pid, start: new Date().toISOString(), end: null, config: cfg,
+const session = { pid: cfg.pid, study: cfg.study, code: '', start: new Date().toISOString(), end: null, config: cfg,
   env: { ua: navigator.userAgent, viewport_w: innerWidth, viewport_h: innerHeight, dpr: devicePixelRatio, refresh_hz: null, screen_w: screen.width, screen_h: screen.height } };
 
 function summary() {
@@ -458,6 +467,30 @@ function toCsv(rows) {
 function download(name, text, type) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click();
 }
+// POST the record to dataUrl. Google Apps Script endpoints need no-cors + text/plain (no preflight); the reply is opaque,
+// so "sent" means the request left the browser. sendBeacon is the fallback and also survives the tab closing.
+async function sendRecord(record) {
+  const body = JSON.stringify(record);
+  try {
+    const r = await fetch(cfg.dataUrl, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body, keepalive: true });
+    if (r.type === 'opaque' || r.ok) return true;
+  } catch (e) {}
+  try { if (navigator.sendBeacon && navigator.sendBeacon(cfg.dataUrl, new Blob([body], { type: 'text/plain' }))) return true; } catch (e) {}
+  return false;
+}
+function askCodeScreen() {
+  return new Promise(resolve => {
+    const box = $('#text'), card = $('#card');
+    card.innerHTML = `<h1>Before you start</h1><p>Please enter the code the researcher gave you (for example your seat number). Leave it empty if you did not get one.</p>
+      <p><input id="pcode" type="text" maxlength="24" style="font-size:18px;padding:6px 10px;width:220px" autocomplete="off"></p>
+      <p><button id="cont">Continue</button></p>`;
+    box.style.display = 'flex';
+    const done = () => { const v = $('#pcode').value.trim().replace(/[",\n]/g, ' '); box.style.display = 'none'; resolve(v); };
+    $('#cont').onclick = done;
+    $('#pcode').addEventListener('keydown', e => { if (e.key === 'Enter') done(); });
+    $('#pcode').focus();
+  });
+}
 
 /* ---------------- main ---------------- */
 async function main() {
@@ -471,6 +504,7 @@ async function main() {
     <p>You will respond with the keyboard, so make sure it is within reach.</p>
     <p class="muted">Participant: ${cfg.pid} · preset: ${cfg.preset} · ${cfg.responseTask} · SOA ${cfg.soas.join('/')} ms · display ${refreshHz} Hz</p>`,
     { button: 'Start' });
+  if (cfg.askCode) session.code = await askCodeScreen();
   if (cfg.fullscreen) { try { await document.documentElement.requestFullscreen(); await sleep(400); buildStim(); } catch (e) {} }
   session.env.fullscreen_granted = !!document.fullscreenElement;
   await ensureWindowSize();
@@ -538,23 +572,27 @@ async function finish() {
   try { localStorage.setItem('gaze_cueing_' + cfg.pid, JSON.stringify(record)); } catch (e) {}
   let posted = '';
   if (cfg.dataUrl) {
-    try {
-      const r = await fetch(cfg.dataUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(record) });
-      posted = r.ok ? '<p>Your data has been saved.</p>' : '<p>Saving failed. Please download the file below and send it to the researcher.</p>';
-    } catch (e) { posted = '<p>Saving failed. Please download the file below and send it to the researcher.</p>'; }
+    const sent = await sendRecord(record);
+    posted = sent ? '<p id="sendstatus">Your data has been sent. Thank you.</p>'
+                  : '<p id="sendstatus">Sending failed. Please click "Send again", or download the file below and give it to the researcher.</p>';
   }
+  const stampEarly = session.start.replace(/[:.]/g, '-');
+  if (cfg.autoDownload) download(`gaze_cueing_${cfg.pid}_${stampEarly}.json`, JSON.stringify(record, null, 1), 'application/json');
   const table = cfg.showSummary ? `<table><tr><th>SOA</th><th>Congruent RT</th><th>Incongruent RT</th><th>Cueing effect</th></tr>
     ${s.rows.map(r => `<tr><td>${r.soa} ms</td><td>${r.mC.toFixed(0)} ms (${r.nC})</td><td>${r.mI.toFixed(0)} ms (${r.nI})</td><td>${r.effect.toFixed(1)} ms</td></tr>`).join('')}</table>
     <p class="muted">Accuracy ${(s.accuracy * 100).toFixed(1)}%${isNaN(s.falseAlarms) ? '' : `, catch-trial false alarms ${(s.falseAlarms * 100).toFixed(0)}%`}</p>` : '';
   const card = $('#card'), box = $('#text');
   card.innerHTML = `<h1>Finished, thank you</h1>${posted}${table}
-    <p><button id="dl-csv">Download CSV</button><button id="dl-json">Download JSON</button>
+    <p><button id="dl-csv">Download CSV</button><button id="dl-json">Download JSON</button><button id="copy-json">Copy data</button>
+    ${cfg.dataUrl ? '<button id="resend">Send again</button>' : ''}
     ${cfg.completionUrl ? `<a href="${cfg.completionUrl}"><button>Finish</button></a>` : ''}</p>
-    <p class="muted">${s.nTrials} experimental trials · participant ${cfg.pid}</p>`;
+    <p class="muted">${s.nTrials} experimental trials · participant ${cfg.pid}${session.code ? ' · code ' + session.code : ''}</p>`;
   box.style.display = 'flex';
   const stamp = session.start.replace(/[:.]/g, '-');
   $('#dl-csv').onclick = () => download(`gaze_cueing_${cfg.pid}_${stamp}.csv`, toCsv(data), 'text/csv');
   $('#dl-json').onclick = () => download(`gaze_cueing_${cfg.pid}_${stamp}.json`, JSON.stringify(record, null, 1), 'application/json');
+  $('#copy-json').onclick = async () => { try { await navigator.clipboard.writeText(JSON.stringify(record)); $('#copy-json').textContent = 'Copied'; } catch (e) { $('#copy-json').textContent = 'Copy failed'; } };
+  const rs = $('#resend'); if (rs) rs.onclick = async () => { rs.textContent = 'Sending...'; const ok = await sendRecord(record); rs.textContent = ok ? 'Sent' : 'Failed, download instead'; };
   window.__gazeCueingRecord = record;   // for programmatic access (tests, LLM harness)
 }
 
