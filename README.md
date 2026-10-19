@@ -90,7 +90,18 @@ It prints a link such as `http://192.168.1.23:8731/?study=students-oct2026&askCo
 ```
 Each run lands as one response holding the whole record as JSON; link the form to a Sheet (Responses > Sheets icon) and export. No deployment, no authorisation dialogs.
 
-**Option C, Apps Script to a Google Sheet** (one row per trial, nicer to browse, 5 minutes of setup): create a Sheet, Extensions > Apps Script, paste `apps_script.gs`, Deploy > Web app (execute as me, access: anyone), copy the `/exec` URL and pass it as `dataUrl=` or set `DEFAULTS.dataUrl`.
+**Option C, Railway, always on, like the outcome-bias platform.** The same `collector.py` runs on Railway. From this folder:
+```
+railway login
+railway init            # new project, name it gaze-cueing-collector
+railway up              # deploys; railway.json starts collector.py
+railway volume add --mount-path /app/data     # data survives redeploys
+railway variables --set EXPORT_KEY=choose-a-secret --set DATA_DIR=/app/data
+railway domain          # prints https://xxx.up.railway.app
+```
+Then share the GitHub Pages link with `dataUrl=https://xxx.up.railway.app/save`, or paste that URL into `DEFAULTS.dataUrl`. Researcher views: `/dashboard?key=...`, `/export.csv?key=...` (one row per trial), `/export.jsonl?key=...` (raw records). The repo can stay public: the data never enters it, only the service holds it.
+
+**Option D, Apps Script to a Google Sheet** (one row per trial, nicer to browse, 5 minutes of setup): create a Sheet, Extensions > Apps Script, paste `apps_script.gs`, Deploy > Web app (execute as me, access: anyone), copy the `/exec` URL and pass it as `dataUrl=` or set `DEFAULTS.dataUrl`.
 
 1. **Pick one of the three** above. Whatever you choose, every trial is also saved in the participant's browser as it happens, and the finish screen has Send again, Copy data and Download JSON.
 2. **Share one link** with the study label (for Option A the collector prints it):

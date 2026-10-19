@@ -53,6 +53,13 @@ def load_file(path):
         with open(path, encoding='utf-8') as f:
             rec = json.load(f)
         rows += rows_from_record(rec, name)
+    elif path.lower().endswith('.jsonl'):                                       # collector.py append-only file or export
+        with open(path, encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line: continue
+                try: rows += rows_from_record(json.loads(line), name)
+                except json.JSONDecodeError: pass
     elif path.lower().endswith('.csv'):
         with open(path, encoding='utf-8-sig', newline='') as f:
             reader = csv.DictReader(f)
@@ -112,7 +119,7 @@ def main():
     paths = []
     for p in a.inputs:
         if os.path.isdir(p):
-            paths += [os.path.join(p, f) for f in sorted(os.listdir(p)) if f.lower().endswith(('.json', '.csv'))]
+            paths += [os.path.join(p, f) for f in sorted(os.listdir(p)) if f.lower().endswith(('.json', '.jsonl', '.csv'))]
         else:
             paths.append(p)
     rows = []
