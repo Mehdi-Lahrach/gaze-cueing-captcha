@@ -23,6 +23,7 @@ def norm(v):
     if v is None: return ''
     if isinstance(v, bool): return 'true' if v else 'false'
     if isinstance(v, str):
+        if v == ' ': return 'SPACE'          # the space-bar response, which strip() would erase
         s = v.strip()
         if s.lower() in ('true', 'false', ''): return s.lower()
         return s
