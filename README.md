@@ -160,3 +160,11 @@ CSV columns, one row per trial:
 The JSON adds the full config, user agent, viewport, device pixel ratio and estimated refresh rate.
 
 Suggested exclusions for analysis: accuracy below 80%, RTs below 100 ms or above the timeout, trials with `dropped_frames` > 0 or `soa_actual` more than 1 frame off, participants with more than 5% such trials.
+
+## Reaching the laptop collector from the internet (agents in cloud browsers)
+
+A free Cloudflare quick tunnel gives the collector a temporary public address, no account needed:
+```
+"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:8731 --no-autoupdate
+```
+It prints `https://<random-words>.trycloudflare.com`. Put that in the survey link as `dataUrl=https://<random-words>.trycloudflare.com/save` and every run posts straight into `data/incoming`, wherever the agent runs. The address changes each time the tunnel is restarted, so regenerate the links when you restart it. Keep both the collector and the tunnel windows open while agents work.
