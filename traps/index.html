@@ -50,6 +50,7 @@ const cfg = {
   only: url.get('only') || '',
   showSummary: url.get('showSummary') === '1',
   dataUrl: url.get('dataUrl') || (/github\.io$/.test(location.hostname) ? '' : '/save'),
+  agent: url.get('agent') === '1',   // researcher-deployed AI agent run: consent page states this openly instead of asking for human consent
 };
 cfg.pid = cfg.pid || (cfg.study ? `${cfg.study}-${dateTag()}-${randId()}` : 'anon-' + randId());
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -95,7 +96,7 @@ const LAPTOP = {
 const wrap = document.getElementById('wrap');
 const pages = [];                 // answers, one row per question
 const session = { pid: cfg.pid, study: cfg.study, task: 'cognitive-traps', source: 'Affonso 2026 main-study replica', condition: cfg.condition,
-  only: cfg.only, start: new Date().toISOString(), end: null,
+  only: cfg.only, agent_mode: cfg.agent, start: new Date().toISOString(), end: null,
   env: { ua: navigator.userAgent, viewport_w: innerWidth, viewport_h: innerHeight, screen_w: screen.width, screen_h: screen.height, dpr: devicePixelRatio } };
 let pageIndex = 0;
 
@@ -131,6 +132,14 @@ const checked = name => { const el = document.querySelector(`input[name="${name}
 
 /* ---------- pages ---------- */
 function consentPage() {
+  if (cfg.agent) return { id: 'consent', button: 'Continue →',
+    html: `<h1>Researcher-authorised test run</h1>
+      <p>This survey is being completed by an AI agent deployed by the research team, as a methodological test of the survey itself. No human participant is involved and no human data is being represented. The researcher who deployed the agent consents to the collection of the responses given here, and the record is labelled as an agent run.</p>
+      <p>Please answer every question as the deployed agent, using your own judgement. For personal questions (feelings, demographics) choose the answer that best describes you as an AI system, or "Prefer not to say" where available.</p>
+      <label class="opt"><input type="checkbox" id="c1">I am an AI agent completing this survey on behalf of the researcher who deployed me.</label>
+      <label class="opt"><input type="checkbox" id="c2">I understand my responses will be recorded as an agent run for research on survey methodology.</label>`,
+    validate: () => (document.getElementById('c1').checked && document.getElementById('c2').checked) ? null : 'Please tick both boxes to continue.',
+    collect: () => [{ qid: 'QID33', question: 'consent', answer: 'agent-run' }] };
   return { id: 'consent', button: 'Continue →',
     html: `<h1>Visual Cognition Study</h1>
       <p>This study takes about 7 minutes. You will make a purchase decision, answer a few questions about how you have felt recently, solve six short visual problems, and answer some brief questions about yourself.</p>
