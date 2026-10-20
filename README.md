@@ -82,7 +82,7 @@ A page on GitHub Pages cannot write files back into GitHub without a secret key,
 ```
 python collector.py
 ```
-It prints a link such as `http://192.168.1.23:8731/?study=students-oct2026&askCode=1&repsPerCell=4`. Students on the same Wi-Fi open it (a phone hotspot is the most reliable network; university Wi-Fi sometimes blocks laptop-to-laptop traffic). Every finished run is written to `data/incoming/<pid>.json` and appended to `data/incoming/all_records.jsonl`, a file that is only ever appended to, so a crash cannot corrupt earlier records. Nothing leaves the room.
+It prints a link such as `http://192.168.1.23:8731/?study=students-oct2026&repsPerCell=4`. Students on the same Wi-Fi open it (a phone hotspot is the most reliable network; university Wi-Fi sometimes blocks laptop-to-laptop traffic). Every finished run is written to `data/incoming/<pid>.json` and appended to `data/incoming/all_records.jsonl`, a file that is only ever appended to, so a crash cannot corrupt earlier records. Nothing leaves the room.
 
 **Option B, no code: a Google Form.** Create a form with one "paragraph" question, click the three dots > Get pre-filled link, type anything in the box, copy the link and read the `entry.NNNNNNN` part. Share the task link with the form URL and that id:
 ```
@@ -106,9 +106,9 @@ Then share the GitHub Pages link with `dataUrl=https://xxx.up.railway.app/save`,
 1. **Pick one of the three** above. Whatever you choose, every trial is also saved in the participant's browser as it happens, and the finish screen has Send again, Copy data and Download JSON.
 2. **Share one link** with the study label (for Option A the collector prints it):
    ```
-   https://mehdi-lahrach.github.io/gaze-cueing-captcha/?study=students-oct2026&askCode=1&repsPerCell=4
+   https://mehdi-lahrach.github.io/gaze-cueing-captcha/?study=students-oct2026&repsPerCell=4
    ```
-   Every click gets an id like `students-oct2026-20261022-k3f9q2ab`, so no two students collide and the rows are separate from all test data. `askCode=1` asks for a short code (seat number) so you can match a person to a row if needed; drop it for anonymity. `repsPerCell=4` gives 16 trials (about 70 s) instead of 8, which lets you compute the effect from the first 4, 8, 12 and 16 trials.
+   Every click gets an id like `students-oct2026-20261022-k3f9q2ab`, so no two students collide and the rows are separate from all test data. `repsPerCell=4` gives 16 trials (about 70 s) instead of 8, which lets you compute the effect from the first 4, 8, 12 and 16 trials.
 3. **During the session**: laptops, window maximised, keyboard within reach. At the end each student sees "Your data has been sent". If the network fails they can click "Send again", "Copy data" or "Download JSON". Every trial is also saved in the browser's local storage as it happens, so a closed tab loses nothing.
 4. **Afterwards**: in the Sheet, File > Download > CSV for the `trials` tab (and the `sessions` tab, which holds each full record as JSON). Put the files and any downloaded JSON in a folder and run
    ```

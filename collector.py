@@ -158,7 +158,7 @@ if __name__ == '__main__':
     print(f'Gaze-cueing collector on port {PORT}. Data dir: {DATA_DIR}', flush=True)
     if not on_railway:
         ip = lan_ip()
-        print(f'Share on the same Wi-Fi:  http://{ip}:{PORT}/?study=students-oct2026&askCode=1&repsPerCell=4')
+        print(f'Share on the same Wi-Fi:  http://{ip}:{PORT}/?study=students-oct2026&repsPerCell=4')
         print(f'Dashboard:               http://localhost:{PORT}/dashboard?key={EXPORT_KEY}')
         print('Press Ctrl+C to stop.\n', flush=True)
     try:

@@ -97,7 +97,7 @@ const DEFAULTS = {
   completionUrl: '',              // if set, a "Finish" link to this URL (e.g. Prolific completion) is shown
   pid: '',                        // participant id; also read from ?PROLIFIC_PID=
   study: '',                      // study label (e.g. students-oct2026): tags every row and gives each click a unique id study-YYYYMMDD-xxxxxx
-  askCode: false,                 // ask the participant for a short code (seat number, initials) before the task starts
+  askCode: false,                 // optional: ask for a short code (seat number) before the task; off by default, ids are automatic
   autoDownload: false,            // download the JSON file automatically at the end (local backup when no dataUrl is set)
 };
 
