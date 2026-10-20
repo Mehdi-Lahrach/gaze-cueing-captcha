@@ -109,7 +109,8 @@ function showPage(p) {
     const t0 = performance.now(); let firstClick = null, lastClick = null, clicks = 0;
     wrap.innerHTML = p.html + `<div class="err" id="err"></div><div class="nav"><button id="next">${p.button || 'Next →'}</button></div>`;
     window.scrollTo(0, 0);
-    const onClick = () => { const t = performance.now() - t0; if (firstClick === null) firstClick = t; lastClick = t; clicks++; };
+    // ignore the first 50 ms: the click that submitted the previous page would otherwise be counted on this one
+    const onClick = () => { const t = performance.now() - t0; if (t < 50) return; if (firstClick === null) firstClick = t; lastClick = t; clicks++; };
     wrap.addEventListener('click', onClick);
     document.getElementById('next').onclick = () => {
       const err = p.validate ? p.validate() : null;
