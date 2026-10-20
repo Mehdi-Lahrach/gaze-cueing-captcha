@@ -120,9 +120,13 @@ class Handler(SimpleHTTPRequestHandler):
             for rec in reversed(recs):
                 se = rec.get('session', {}) or {}; s = rec.get('summary', {}) or {}; env = se.get('env', {}) or {}
                 eff = (s.get('rows') or [{}])[0].get('effect')
+                is_traps = se.get('task') == 'cognitive-traps'
                 lines.append('<tr>' + ''.join(f'<td>{html.escape(str(v if v is not None else ""))}</td>' for v in [
-                    rec.get('received_at', ''), se.get('pid', ''), se.get('study', ''), se.get('code', ''), s.get('nTrials', ''),
-                    s.get('accuracy', ''), (round(eff, 1) if isinstance(eff, (int, float)) else ''), s.get('untrustedPresses', ''), env.get('refresh_hz', '')]) + '</tr>')
+                    rec.get('received_at', ''), se.get('pid', ''), se.get('study', '') + (' (traps)' if is_traps else ''), se.get('code', ''),
+                    s.get('nTrials', s.get('traps_answered', '')),
+                    s.get('accuracy', f"{s.get('traps_correct', '')}/6 correct" if is_traps else ''),
+                    (round(eff, 1) if isinstance(eff, (int, float)) else ('flagged' if s.get('flagged_3plus') else '')),
+                    s.get('untrustedPresses', ''), env.get('refresh_hz', '')]) + '</tr>')
             lines.append('</table>')
             return self._send(200, '\n'.join(lines), 'text/html; charset=utf-8')
         return super().do_GET()

@@ -118,6 +118,17 @@ Then share the GitHub Pages link with `dataUrl=https://xxx.up.railway.app/save`,
 
 Why this layout: JSON is written at the source and kept whole in the `sessions` tab, so a corrupted or half-exported CSV can always be rebuilt from it; the trial rows exist in three places (Sheet, participant's browser, optional download); and the study label keeps the student data apart from every test run.
 
+## Cognitive-trap survey (Affonso 2026 replica)
+
+`traps/index.html` reproduces Affonso's main-study survey page by page from his published Qualtrics file: consent (ours, no reCAPTCHA), the laptop choice (conflict or dominated at random), PANAS with the instructed item, the intro, the six traps in random order with shuffled options and forced answers, the three attention checks, demographics. Page timing and click counts are recorded as in Qualtrics. Served by the same collector and hosted at `/traps/` on GitHub Pages.
+
+```
+http://<collector>/traps/?study=agents-oct2026            full survey
+http://<collector>/traps/?study=students-oct2026&only=traps   intro + six traps only, about 2 minutes
+...&condition=conflict|dominated  ...&showSummary=1  ...&dataUrl=
+```
+Records carry `task: "cognitive-traps"`; merge them with `python traps_merge.py data/incoming --study <label> --out data/traps`, which gives per-trap correctness, the 3-failure flag, deferral and the attention-check results per participant. His stimuli, trap definitions, survey file and data samples are in `../affonso_materials/`.
+
 ## Static frames for the LLM arm
 
 ```
