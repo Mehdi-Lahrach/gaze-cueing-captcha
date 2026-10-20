@@ -125,7 +125,8 @@ for (const k of Object.keys(DEFAULTS)) {
   else if (typeof d === 'boolean') cfg[k] = (v === '1' || v === 'true');
   else cfg[k] = v;
 }
-const randId = () => Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 4);
+// time component included: some agent sandboxes seed Math.random identically on every fresh session, which would repeat ids
+const randId = () => Date.now().toString(36).slice(-5) + Math.random().toString(36).slice(2, 7);
 const dateTag = () => new Date().toISOString().slice(0, 10).replace(/-/g, '');
 cfg.study = (cfg.study || '').replace(/[^A-Za-z0-9_-]/g, '');
 cfg.pid = cfg.pid || url.get('PROLIFIC_PID') || (cfg.study ? `${cfg.study}-${dateTag()}-${randId()}` : 'anon-' + randId());

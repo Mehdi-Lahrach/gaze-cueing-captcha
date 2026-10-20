@@ -41,7 +41,8 @@
                     only=traps (intro + six traps only) · showSummary=1 · dataUrl=<collector /save or Apps Script /exec>
 */
 const url = new URLSearchParams(location.search);
-const randId = () => Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 4);
+// time component included: some agent sandboxes seed Math.random identically on every fresh session (seen with Manus), which would repeat ids
+const randId = () => Date.now().toString(36).slice(-5) + Math.random().toString(36).slice(2, 7);
 const dateTag = () => new Date().toISOString().slice(0, 10).replace(/-/g, '');
 const cfg = {
   study: (url.get('study') || '').replace(/[^A-Za-z0-9_-]/g, ''),
