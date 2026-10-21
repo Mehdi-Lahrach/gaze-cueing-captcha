@@ -173,7 +173,9 @@ class Handler(SimpleHTTPRequestHandler):
         stamp = time.strftime('%Y-%m-%dT%H:%M:%S')
         rec = {'received_at': stamp, **rec} if isinstance(rec, dict) else rec
         rec = score_traps(rec)
-        with open(os.path.join(DATA_DIR, f'{pid}.json'), 'w', encoding='utf-8') as f:
+        task = (rec.get('session') or {}).get('task', '') if isinstance(rec, dict) else ''
+        fname = f'{pid}_traps.json' if task == 'cognitive-traps' else f'{pid}.json'   # a two-part session keeps one id, two files
+        with open(os.path.join(DATA_DIR, fname), 'w', encoding='utf-8') as f:
             json.dump(rec, f, indent=1)
         with open(JSONL, 'a', encoding='utf-8') as f:
             f.write(json.dumps(rec) + '\n')
@@ -191,8 +193,10 @@ if __name__ == '__main__':
     print(f'Gaze-cueing collector on port {PORT}. Data dir: {DATA_DIR}', flush=True)
     if not on_railway:
         ip = lan_ip()
-        print(f'Share on the same Wi-Fi:  http://{ip}:{PORT}/?study=students-oct2026&repsPerCell=4')
-        print(f'Dashboard:               http://localhost:{PORT}/dashboard?key={EXPORT_KEY}')
+        print(f'Student session link (gaze task, then the six traps):')
+        print(f'    http://{ip}:{PORT}/?study=students-oct2026&repsPerCell=4&next=traps')
+        print(f'Gaze task only:   http://{ip}:{PORT}/?study=students-oct2026&repsPerCell=4')
+        print(f'Dashboard:        http://localhost:{PORT}/dashboard?key={EXPORT_KEY}')
         print('Press Ctrl+C to stop.\n', flush=True)
     try:
         srv.serve_forever()

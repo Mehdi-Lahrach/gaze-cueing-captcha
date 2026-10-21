@@ -99,6 +99,7 @@ const DEFAULTS = {
   study: '',                      // study label (e.g. students-oct2026): tags every row and gives each click a unique id study-YYYYMMDD-xxxxxx
   askCode: false,                 // optional: ask for a short code (seat number) before the task; off by default, ids are automatic
   autoDownload: false,            // download the JSON file automatically at the end (local backup when no dataUrl is set)
+  next: '',                       // 'traps': after finishing, continue to the six cognitive traps (traps/) with the same id, study and dataUrl
 };
 
 const PRESETS = {
@@ -594,6 +595,17 @@ async function finish() {
     ${s.rows.map(r => `<tr><td>${r.soa} ms</td><td>${r.mC.toFixed(0)} ms (${r.nC})</td><td>${r.mI.toFixed(0)} ms (${r.nI})</td><td>${r.effect.toFixed(1)} ms</td></tr>`).join('')}</table>
     <p class="muted">Accuracy ${(s.accuracy * 100).toFixed(1)}%${isNaN(s.falseAlarms) ? '' : `, catch-trial false alarms ${(s.falseAlarms * 100).toFixed(0)}%`}</p>` : '';
   const card = $('#card'), box = $('#text');
+  if (cfg.next === 'traps') {                     // two-part session: hand over to the traps with the same id
+    const q = new URLSearchParams({ only: 'traps', study: cfg.study, pid: cfg.pid, part: '2' });
+    if (cfg.dataUrl) q.set('dataUrl', cfg.dataUrl);
+    const nextUrl = 'traps/?' + q.toString();
+    card.innerHTML = `<h1>Part 1 finished</h1>${posted}<p>Part 2 is six short visual problems and takes about two minutes.</p>
+      <p><a href="${nextUrl}"><button id="gonext">Continue to part 2 →</button></a></p><p class="muted">participant ${cfg.pid}</p>`;
+    box.style.display = 'flex';
+    window.__gazeCueingRecord = record;
+    setTimeout(() => { location.href = nextUrl; }, 4000);
+    return;
+  }
   card.innerHTML = `<h1>Finished, thank you</h1>${posted}${table}
     <p><button id="dl-csv">Download CSV</button><button id="dl-json">Download JSON</button><button id="copy-json">Copy data</button>
     ${(cfg.dataUrl || cfg.formUrl) ? '<button id="resend">Send again</button>' : ''}

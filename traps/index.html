@@ -52,6 +52,7 @@ const cfg = {
   showSummary: url.get('showSummary') === '1',
   dataUrl: url.get('dataUrl') || (/github\.io$/.test(location.hostname) ? '' : '/save'),
   agent: url.get('agent') === '1',   // researcher-deployed AI agent run: consent page states this openly instead of asking for human consent
+  part: url.get('part') || '',       // '2' when reached from the gaze task in a two-part session (same pid)
 };
 cfg.pid = cfg.pid || (cfg.study ? `${cfg.study}-${dateTag()}-${randId()}` : 'anon-' + randId());
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -179,7 +180,7 @@ function panasPage() {
 }
 function introPage() {
   return { id: 'traps_intro', button: '→',
-    html: `<p class="center"><b>Visual Cognition and Problem-Solving Study</b></p>
+    html: `${cfg.part === '2' ? '<p class="center muted">Part 2 of 2</p>' : ''}<p class="center"><b>Visual Cognition and Problem-Solving Study</b></p>
       <p>Thank you for participating in this research on visual cognition and reasoning.</p>
       <p>This study examines how people solve different types of visual problems. You'll encounter several tasks involving shapes, patterns, and spatial arrangements. Some questions ask you to count specific objects, others involve judging visual relationships or predicting what happens next in a sequence.</p>
       <p>These tasks vary in difficulty, and that's intentional—we're interested in understanding the range of visual reasoning abilities. Please do your best on each question, but don't worry if some seem challenging. Answer based on what you see in the images provided.</p>
