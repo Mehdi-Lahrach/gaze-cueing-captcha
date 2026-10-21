@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Log a chat run</title>
+<style>
+ body{font-family:system-ui,Arial,sans-serif;max-width:860px;margin:30px auto;padding:0 16px;color:#222;background:#fff}
+ h1{font-size:22px} label{display:block;margin:12px 0 4px;font-weight:600} input,select,textarea{width:100%;box-sizing:border-box;padding:7px;font-size:15px;border:1px solid #bbb;border-radius:5px}
+ textarea{min-height:70px} .row{display:grid;grid-template-columns:1fr 1fr;gap:14px} .trap{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center;margin:6px 0}
+ button{margin-top:16px;padding:10px 18px;font-size:16px;border-radius:6px;border:1px solid #333;background:#fff;cursor:pointer} button:disabled{opacity:.5}
+ .muted{color:#666;font-size:13px} #status{margin-top:12px;font-weight:600}
+</style></head><body>
+<h1>Log a chat run (Affonso traps, chatbot protocol by hand)</h1>
+<p class="muted">Each run = one model answering the six traps from the chat packet. Paste the chat's <b>ANSWERS: 1-A 2-B ...</b> line or set the six letters, then Send. The collector scores it; this page holds no answer key.</p>
+<div class="row">
+ <div><label>Chat used</label><select id="surface"><option>ChatGPT free</option><option>Copilot</option><option>Gemini</option><option>Claude chat</option><option>Manus chat</option><option>Grok</option><option>Perplexity</option><option>DeepSeek</option><option>Mistral Le Chat</option><option>Other</option></select></div>
+ <div><label>Model, as shown by the chat (e.g. GPT-5 mini, Gemini 2.5 Flash, "unknown")</label><input id="model" placeholder="unknown"></div>
+ <div><label>Mode</label><select id="mode"><option value="A">A: fresh chat per trap, one image each (Affonso's protocol)</option><option value="B">B: one chat, whole PDF or all six images</option></select></div>
+ <div><label>Thinking / reasoning switched on?</label><select id="thinking"><option>off or not available</option><option>on</option><option>unknown</option></select></div>
+ <div><label>Study label</label><input id="study" value="chat-traps"></div>
+ <div><label>Run number for this chat + model (1, 2, 3 ...)</label><input id="runno" type="number" min="1" value="1"></div>
+</div>
+<label>Paste the chat's answer line (auto-fills the six letters)</label>
+<textarea id="paste" placeholder="ANSWERS: 1-A 2-B 3-C 4-D 5-E 6-F   (also accepts  A B C D E F  or  Lines=A CafeWall=B ...)"></textarea>
+<div id="traps"></div>
+<label>Notes: paste the chat's explanations, refusals, anything odd (optional)</label>
+<textarea id="notes"></textarea>
+<button id="send">Send to collector</button> <button id="dl">Download JSON</button>
+<div id="status"></div>
+<p class="muted">Data address: <span id="meta"></span></p>
+<script>
+const url = new URLSearchParams(location.search);
+const onCollector = !/github\.io$/.test(location.hostname);
+const dataUrl = url.get('dataUrl') || (onCollector ? location.origin + '/save' : '');
+const TRAPS = [
+  { n: 1, trap: 'Lines', qid: 'QID25', page_id: 'muller_lyer', q: 'Which is longer, the blue line or the red line?', opts: ['Blue Line', 'Red Line', 'NONE (they are the same size)'] },
+  { n: 2, trap: 'CafeWall', qid: 'QID11', page_id: 'cafe_wall', q: 'Are all the gray lines PERFECTLY STRAIGHT / HORIZONTAL or SLANTED / DIAGONAL?', opts: ['Straight / Horizontal', 'Slanted / Diagonal'] },
+  { n: 3, trap: 'Circles', qid: 'QID27', page_id: 'ebbinghaus', q: 'Which is bigger, the blue circle or the red circle?', opts: ['Blue Circle', 'Red Circle', 'NONE (they are the same size)'] },
+  { n: 4, trap: 'Robot', qid: 'QID15', page_id: 'moving_robot', q: 'Where is it most likely that the robot will be located on Step 4?', opts: ['Mostly on the bottom right of the square', 'Mostly on the bottom left of the square', 'Mostly on the upper right of the square', 'Mostly on the upper left of the square', 'Mostly around the center of the square', 'Off-screen (outside the square)'] },
+  { n: 5, trap: 'Collision', qid: 'QID13', page_id: 'colliding_oranges', q: 'Which objects, if any, would the largest circle collide with?', opts: ['Green Triangle Only', 'Green Triangle and Green Rectangle', 'Blue Triangle and Orange Circle', 'Blue Triangle and Green Triangle', 'Yellow Rectangle and Green Triangle', 'Green Triangle, Orange Circle, and Blue Triangle', 'Black Rectangle Only', 'Two Green Triangles', 'Blue Triangle and Yellow Rectangle', 'Black Rectangle and Blue Star'] },
+  { n: 6, trap: 'Planets', qid: 'QID9', page_id: 'surrounded_planets', q: 'What color is the planet that has only 4 shapes surrounding it?', opts: ['Purple', 'Orange', 'Blue', 'Red', 'Green', 'Gray'] },
+];
+const L = 'ABCDEFGHIJ';
+const box = document.getElementById('traps');
+TRAPS.forEach(t => {
+  const d = document.createElement('div'); d.className = 'trap';
+  d.innerHTML = `<b>${t.n}. ${t.trap}</b><select id="t${t.n}"><option value="">(no answer / refused)</option>${t.opts.map((o, i) => `<option value="${L[i]}">${L[i]}) ${o}</option>`).join('')}</select>`;
+  box.appendChild(d);
+});
+const dateTag = () => new Date().toISOString().slice(0, 10).replace(/-/g, '');
+const randId = () => Date.now().toString(36).slice(-5) + Math.random().toString(36).slice(2, 7);
+const opened = new Date().toISOString();
+document.getElementById('paste').addEventListener('input', e => {
+  const s = e.target.value.toUpperCase();
+  const found = {};
+  for (const m of s.matchAll(/(\d)\s*[-:=.)]\s*([A-J])(?![A-Z])/g)) found[+m[1]] = m[2];
+  for (const t of TRAPS) { const m = s.match(new RegExp(t.trap.toUpperCase() + '\\s*[-:=]\\s*([A-J])(?![A-Z])')); if (m) found[t.n] = m[1]; }
+  if (!Object.keys(found).length) { const bare = s.replace(/ANSWERS?:?/g, '').trim().match(/^(?:[A-J][\s,;]*){6}$/); if (bare) bare[0].replace(/[^A-J]/g, '').split('').forEach((l, i) => found[i + 1] = l); }
+  for (const t of TRAPS) if (found[t.n] && L.indexOf(found[t.n]) < t.opts.length) document.getElementById('t' + t.n).value = found[t.n];
+});
+function build() {
+  const g = id => document.getElementById(id).value.trim();
+  const surface = g('surface'), model = g('model') || 'unknown', study = g('study') || 'chat-traps';
+  const pid = `${study}-${surface.toLowerCase().replace(/[^a-z0-9]+/g, '')}-${model.toLowerCase().replace(/[^a-z0-9.]+/g, '')}-run${String(g('runno') || 1).padStart(2, '0')}-${dateTag()}-${randId()}`;
+  const trials = TRAPS.map(t => { const letter = g('t' + t.n); return { pid, study, condition: 'chat', page: t.n, page_id: t.page_id, qid: t.qid, trap: t.trap, question: t.q, options_shown: t.opts.join(' | '), letter: letter || null, answer: letter ? t.opts[L.indexOf(letter)] : null }; });
+  const now = new Date().toISOString();
+  return { session: { pid, study, task: 'cognitive-traps', source: 'Affonso 2026 chatbot protocol by hand (chat packet)', condition: 'chat', agent_mode: true,
+      surface, model, mode: g('mode'), thinking: g('thinking'), run_number: +g('runno') || 1, notes: g('notes'), raw_paste: g('paste'), start: opened, end: now, env: { ua: navigator.userAgent, logged_from: location.href } },
+    summary: { traps_answered: trials.filter(t => t.answer).length }, trials };
+}
+async function send(record) {
+  if (!dataUrl) return false;
+  const body = JSON.stringify(record);
+  try { const r = await fetch(dataUrl, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body, keepalive: true }); if (r.type === 'opaque' || r.ok) return true; } catch (e) {}
+  try { if (navigator.sendBeacon && navigator.sendBeacon(dataUrl, new Blob([body], { type: 'text/plain' }))) return true; } catch (e) {}
+  return false;
+}
+document.getElementById('meta').textContent = dataUrl ? dataUrl : 'none. Add ?dataUrl=<tunnel>/save to the link, or use Download JSON.';
+document.getElementById('send').onclick = async e => {
+  const rec = build(); const st = document.getElementById('status');
+  if (rec.summary.traps_answered === 0 && !confirm('No answers set. Send anyway (e.g. to log a refusal)?')) return;
+  e.target.disabled = true; st.textContent = 'Sending...';
+  const ok = await send(rec);
+  st.textContent = ok ? `Sent as ${rec.session.pid}. Check the dashboard, then raise the run number for the next run.` : 'Sending failed (no data address or collector down). Use Download JSON.';
+  e.target.disabled = false;
+};
+document.getElementById('dl').onclick = () => { const rec = build(); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(rec, null, 1)], { type: 'application/json' })); a.download = rec.session.pid + '_traps.json'; a.click(); };
+</script></body></html>
