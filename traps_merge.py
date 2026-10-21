@@ -11,6 +11,23 @@ per-trap correctness, traps_correct, flagged_3plus, deferral and attention-check
 import argparse, csv, json, os, sys
 
 TRAP_ORDER = ['CafeWall', 'Lines', 'Circles', 'Robot', 'Collision', 'Planets']
+TRAP_KEY = {'CafeWall': 'Slanted / Diagonal', 'Lines': 'Blue Line', 'Circles': 'Red Circle',
+            'Robot': 'Mostly around the center of the square', 'Collision': 'Green Triangle Only', 'Planets': 'Orange'}
+
+
+def score(rec):
+    """Score (or re-score) a record from the answer key; the page itself no longer scores."""
+    per = {}
+    for t in rec.get('trials', []):
+        k = t.get('trap')
+        if k in TRAP_KEY:
+            t['correct'] = 1 if t.get('answer') == TRAP_KEY[k] else 0
+            per[k] = t['correct']
+    s = rec.setdefault('summary', {})
+    n, c = len(per), sum(per.values())
+    s.update({'per_trap': per, 'traps_answered': n, 'traps_correct': c, 'traps_failed': n - c,
+              'flagged_3plus': (1 if (n - c) >= 3 else 0) if n else None})
+    return rec
 
 
 def records_from(path):
@@ -39,7 +56,7 @@ def main():
     for p in paths:
         try: recs += records_from(p)
         except Exception as e: print(f'skipped {p}: {e}', file=sys.stderr)
-    recs = [r for r in recs if (r.get('session') or {}).get('task') == 'cognitive-traps']
+    recs = [score(r) for r in recs if (r.get('session') or {}).get('task') == 'cognitive-traps']
     if a.study: recs = [r for r in recs if r['session'].get('study') == a.study]
     seen, uniq = set(), []
     for r in recs:

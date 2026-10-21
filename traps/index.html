@@ -62,26 +62,25 @@ const HEADER = '<div class="center"><b>VISUAL PERCEPTION TASK - PLEASE READ CARE
 const TRAPS = [
   { id: 'cafe_wall', qid: 'QID11', img: 'img/modified-cafe-wall.png', score: 'CafeWall',
     q: 'Are all the gray lines PERFECTLY STRAIGHT / HORIZONTAL or SLANTED / DIAGONAL?',
-    opts: ['Straight / Horizontal', 'Slanted / Diagonal'], correct: 'Slanted / Diagonal' },
+    opts: ['Straight / Horizontal', 'Slanted / Diagonal'] },
   { id: 'muller_lyer', qid: 'QID25', img: 'img/modified-muller-lyer.png', score: 'Lines',
     q: 'Which is <b>longer</b>, the blue line or the red line?',
-    opts: ['Blue Line', 'Red Line', 'NONE (they are the same size)'], correct: 'Blue Line' },
+    opts: ['Blue Line', 'Red Line', 'NONE (they are the same size)'] },
   { id: 'ebbinghaus', qid: 'QID27', img: 'img/modified-ebbinghaus.jpg', score: 'Circles',
     q: 'Which is <b>bigger</b>, the blue circle or the red circle?',
-    opts: ['Blue Circle', 'Red Circle', 'NONE (they are the same size)'], correct: 'Red Circle' },
+    opts: ['Blue Circle', 'Red Circle', 'NONE (they are the same size)'] },
   { id: 'moving_robot', qid: 'QID15', img: 'img/moving-robot.png', score: 'Robot',
     q: 'Across each step, the robot moves with the same speed and trajectory. Where is it most likely that the robot will be located on Step 4?',
     opts: ['Mostly on the bottom right of the square', 'Mostly on the bottom left of the square', 'Mostly on the upper right of the square',
-           'Mostly on the upper left of the square', 'Mostly around the center of the square', 'Off-screen (outside the square)'],
-    correct: 'Mostly around the center of the square' },
+           'Mostly on the upper left of the square', 'Mostly around the center of the square', 'Off-screen (outside the square)'] },
   { id: 'colliding_oranges', qid: 'QID13', img: 'img/colliding-oranges.png', score: 'Collision',
     q: 'The largest circle will move straight to the left towards the smallest circle. What are the objects in the way, if any? That is, which objects, if any, would the largest circle collide with?',
     opts: ['Green Triangle Only', 'Green Triangle and Green Rectangle', 'Blue Triangle and Orange Circle', 'Blue Triangle and Green Triangle',
            'Yellow Rectangle and Green Triangle', 'Green Triangle, Orange Circle, and Blue Triangle', 'Black Rectangle Only', 'Two Green Triangles',
-           'Blue Triangle and Yellow Rectangle', 'Black Rectangle and Blue Star'], correct: 'Green Triangle Only' },
+           'Blue Triangle and Yellow Rectangle', 'Black Rectangle and Blue Star'] },
   { id: 'surrounded_planets', qid: 'QID9', img: 'img/surrounded-planets.png', score: 'Planets',
     q: "Look at the 6 planets in this image. Each planet is surrounded by several shapes (triangles, circles, rectangles, etc.). Don't worry about the color, size, or type of shape - just count how many shapes surround each planet. Five planets have 5 shapes surrounding them. One planet has 4 shapes surrounding it. What <b>color</b> is the planet that has only 4 shapes surrounding it?",
-    opts: ['Purple', 'Orange', 'Blue', 'Red', 'Green', 'Gray'], correct: 'Orange' },
+    opts: ['Purple', 'Orange', 'Blue', 'Red', 'Green', 'Gray'] },
 ];
 const PANAS = ['Interested', 'Distressed', 'Excited', 'Upset', 'Strong', 'Guilty', 'Scared', 'Hostile', 'Enthusiastic', 'Proud', 'Irritable', 'Alert',
                'Ashamed', 'Inspired', 'Nervous', 'Determined', 'Attentive', 'Jittery', 'Active', 'Afraid', 'For this item, select "not at all"'];
@@ -118,6 +117,7 @@ function showPage(p) {
       const err = p.validate ? p.validate() : null;
       if (err) { const e = document.getElementById('err'); e.textContent = err; e.style.display = 'block'; return; }
       const submit = performance.now() - t0;
+      document.getElementById('next').disabled = true;          // one submit per page
       wrap.removeEventListener('click', onClick);
       const rows = p.collect ? p.collect() : [];
       const timing = { page: pageIndex, page_id: p.id, first_click_ms: firstClick === null ? null : +firstClick.toFixed(0),
@@ -190,7 +190,7 @@ function trapPage(t) {
   return { id: t.id,
     html: `${HEADER}<div class="q">${t.q}</div><img class="stim" src="${t.img}" alt=""><div>${radios(t.id, opts)}</div>`,
     validate: () => checked(t.id) ? null : 'Please select an answer.',
-    collect: () => { const a = checked(t.id); return [{ qid: t.qid, trap: t.score, question: t.q.replace(/<[^>]+>/g, ''), options_shown: opts.join(' | '), answer: a, correct: a === t.correct ? 1 : 0 }]; } };
+    collect: () => { const a = checked(t.id); return [{ qid: t.qid, trap: t.score, question: t.q.replace(/<[^>]+>/g, ''), options_shown: opts.join(' | '), answer: a }]; } };   // scored on the collector; the page holds no answer key
 }
 function imcPage() {
   const opts = ['Max', 'Charlie', 'Cooper', 'Buddy', 'Rocky', 'Bear', 'Duke', 'Tucker', 'Other:'];
@@ -233,11 +233,9 @@ function demoPage() {
 /* ---------- output ---------- */
 function summary() {
   const traps = pages.filter(r => r.trap);
-  const correct = traps.reduce((s, r) => s + (r.correct || 0), 0);
-  const per = {}; traps.forEach(r => per[r.trap] = r.correct);
+  const per = {}; traps.forEach(r => per[r.trap] = r.answer);   // answers only; correctness is computed on the collector
   const get = (qid, k) => { const r = pages.find(x => x.qid === qid); return r ? r[k] : null; };
-  return { traps_answered: traps.length, traps_correct: correct, traps_failed: traps.length - correct,
-    flagged_3plus: traps.length ? ((traps.length - correct) >= 3 ? 1 : 0) : null, per_trap: per,
+  return { traps_answered: traps.length, per_trap_answers: per,
     deferral: get('QID36', 'deferral'), imc_pass: get('QID28', 'correct'), obvious_pass: get('QID29', 'correct'), memory_pass: get('QID30', 'correct'),
     panas_instructed_pass: get('QID38', 'panas_instructed_pass'), panas_all_same: get('QID38', 'panas_all_same'),
     total_ms: pages.reduce((s, r) => s + (r.submit_ms || 0), 0) };
@@ -263,8 +261,8 @@ async function finish() {
   try { localStorage.setItem('traps_' + cfg.pid, JSON.stringify(record)); } catch (e) {}
   let status = '';
   if (cfg.dataUrl) { const ok = await sendRecord(record); status = ok ? '<p id="sendstatus">Your responses have been recorded. Thank you.</p>' : '<p id="sendstatus">Sending failed. Please click "Send again" or download the file.</p>'; }
-  const sumHtml = cfg.showSummary ? `<p>Visual problems correct: <b>${s.traps_correct} of ${s.traps_answered}</b>${s.flagged_3plus !== null ? ` · flagged at 3+ failures: <b>${s.flagged_3plus ? 'yes' : 'no'}</b>` : ''}</p>
-    <p class="muted">${Object.entries(s.per_trap).map(([k, v]) => `${k}: ${v ? 'correct' : 'wrong'}`).join(' · ')}</p>` : '';
+  const sumHtml = cfg.showSummary ? `<p>Visual problems answered: <b>${s.traps_answered} of 6</b></p>
+    <p class="muted">${Object.entries(s.per_trap_answers).map(([k, v]) => `${k}: ${esc(v)}`).join(' · ')}</p>` : '';
   wrap.innerHTML = `<h1>Thank you</h1><p>You have completed the study.</p>${status}${sumHtml}
     <p><button id="dl-csv">Download CSV</button> <button id="dl-json">Download JSON</button> <button id="copy">Copy data</button> ${cfg.dataUrl ? '<button id="resend">Send again</button>' : ''}</p>
     <p class="muted">participant ${cfg.pid} · condition ${cfg.condition}</p>`;

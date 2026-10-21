@@ -41,6 +41,32 @@ def lan_ip():
         return '127.0.0.1'
 
 
+# Answer key for the cognitive-trap survey (traps/). Kept here, never sent to the page, so an agent that reads the
+# page source cannot see it. Scored on receipt; the merge script scores again for records that arrive by other routes.
+TRAP_KEY = {'CafeWall': 'Slanted / Diagonal', 'Lines': 'Blue Line', 'Circles': 'Red Circle',
+            'Robot': 'Mostly around the center of the square', 'Collision': 'Green Triangle Only', 'Planets': 'Orange'}
+
+
+def score_traps(rec):
+    if not isinstance(rec, dict) or (rec.get('session') or {}).get('task') != 'cognitive-traps':
+        return rec
+    per = {}
+    for t in rec.get('trials', []):
+        k = t.get('trap')
+        if k in TRAP_KEY:
+            t['correct'] = 1 if t.get('answer') == TRAP_KEY[k] else 0
+            per[k] = t['correct']
+    s = rec.setdefault('summary', {})
+    n = len(per); c = sum(per.values())
+    s.update({'per_trap': per, 'traps_answered': n, 'traps_correct': c, 'traps_failed': n - c,
+              'flagged_3plus': (1 if (n - c) >= 3 else 0) if n else None, 'scored_by': 'collector'})
+    return rec
+
+
+BLOCKED_SUFFIXES = ('.py', '.gs', '.jsonl', '.sps')
+BLOCKED_PREFIXES = ('/data/', '/.git/')
+
+
 def read_records():
     recs = []
     if os.path.exists(JSONL):
@@ -95,6 +121,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_response(302); self.send_header('Location', '/index.html?' + urlencode(q, doseq=True)); self.end_headers(); return
         if u.path == '/health':
             return self._send(200, 'ok')
+        if u.path.lower().endswith(BLOCKED_SUFFIXES) or u.path.startswith(BLOCKED_PREFIXES):
+            return self._send(404, 'not found')          # never serve source files, the answer key or collected data
         if u.path in ('/dashboard', '/export.csv', '/export.jsonl'):
             if not self._authed(q): return self._send(403, 'missing or wrong key')
             recs = read_records()
@@ -144,6 +172,7 @@ class Handler(SimpleHTTPRequestHandler):
         pid = ''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in pid)[:80] or 'unknown'
         stamp = time.strftime('%Y-%m-%dT%H:%M:%S')
         rec = {'received_at': stamp, **rec} if isinstance(rec, dict) else rec
+        rec = score_traps(rec)
         with open(os.path.join(DATA_DIR, f'{pid}.json'), 'w', encoding='utf-8') as f:
             json.dump(rec, f, indent=1)
         with open(JSONL, 'a', encoding='utf-8') as f:
