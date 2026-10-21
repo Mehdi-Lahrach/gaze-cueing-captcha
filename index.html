@@ -508,7 +508,11 @@ function askCodeScreen() {
 /* ---------------- main ---------------- */
 async function main() {
   buildStim(); showFace(false);
+  // The refresh-rate check needs animation frames, which a background or unfocused tab does not get.
+  // If no frame arrives within a second, say so instead of showing a blank page.
+  const notice = setTimeout(() => { $('#card').innerHTML = '<h1>Please click on this page</h1><p>The task starts as soon as this tab is in front and has been clicked once.</p>'; $('#text').style.display = 'flex'; }, 1000);
   await estimateRefresh();
+  clearTimeout(notice);
   session.env.refresh_hz = refreshHz;
 
   const mins = estimateMinutes();
