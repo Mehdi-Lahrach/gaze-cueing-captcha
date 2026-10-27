@@ -24,7 +24,7 @@
 </style>
 </head>
 <body>
-<div id="stage"><svg id="stim" xmlns="http://www.w3.org/2000/svg"></svg></div>
+<div id="stage"><canvas id="stim"></canvas></div>
 <div id="fb"></div>
 <div id="text"><div class="card" id="card"></div></div>
 
@@ -171,46 +171,53 @@ async function estimateRefresh(n = 90) {
   refreshHz = Math.round(1000 / FRAME);
 }
 
-/* ---------------- stimulus ---------------- */
-const svg = $('#stim');
-const NS = 'http://www.w3.org/2000/svg';
-const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
-let W, H, CX, CY;
-const parts = { pupils: [], targets: {} };
+/* ---------------- stimulus (canvas) ----------------
+   Everything is painted as pixels on one <canvas>. Nothing in the page's element tree changes when the face,
+   the gaze or the target changes, so a program that reads the page code (rather than the screen) cannot see
+   when the target appears. Same function names as before; the trial code is unchanged. */
+const canvas = $('#stim');
+const ctx = canvas.getContext('2d');
+let W, H, CX, CY, DPR = 1;
+const stim = { face: false, gaze: 0, target: null, letter: '' };   // gaze: signed fraction -1..1
 
 function buildStim() {
   W = innerWidth; H = innerHeight; CX = W / 2; CY = H / 2;
-  svg.setAttribute('width', W); svg.setAttribute('height', H);
-  svg.innerHTML = '';
-  parts.pupils = []; parts.targets = {};
-  const ey = CY + cfg.eyeOffsetY;
-  const g = el('g', {});
-  g.appendChild(el('circle', { cx: CX, cy: CY, r: cfg.faceDiameter / 2, fill: cfg.background, stroke: cfg.ink, 'stroke-width': 4 }));
-  for (const s of [-1, 1]) {
-    const ex = CX + s * cfg.eyeOffsetX;
-    g.appendChild(el('circle', { cx: ex, cy: ey, r: cfg.eyeDiameter / 2, fill: cfg.background, stroke: cfg.ink, 'stroke-width': 3 }));
-    const p = el('circle', { cx: ex, cy: ey, r: cfg.pupilDiameter / 2, fill: cfg.ink });
-    p.dataset.ex = ex; g.appendChild(p); parts.pupils.push(p);
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  draw();
+}
+function draw() {
+  ctx.fillStyle = cfg.background; ctx.fillRect(0, 0, W, H);
+  if (!stim.face) return;
+  const ey = CY + cfg.eyeOffsetY, D = cfg.faceDiameter;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = cfg.ink; ctx.fillStyle = cfg.background; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(CX, CY, D / 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.lineWidth = 3;
+  for (const sgn of [-1, 1]) {
+    const ex = CX + sgn * cfg.eyeOffsetX;
+    ctx.fillStyle = cfg.background; ctx.beginPath(); ctx.arc(ex, ey, cfg.eyeDiameter / 2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = cfg.ink; ctx.beginPath(); ctx.arc(ex + stim.gaze * cfg.pupilShift, ey, cfg.pupilDiameter / 2, 0, Math.PI * 2); ctx.fill();
   }
-  const D = cfg.faceDiameter;   // nose and mouth scale with the face
-  g.appendChild(el('circle', { cx: CX, cy: CY + 0.046 * D, r: Math.max(3, D / 52), fill: cfg.ink }));
-  g.appendChild(el('path', { d: `M ${CX - 0.173 * D} ${CY + 0.21 * D} Q ${CX} ${CY + 0.315 * D} ${CX + 0.173 * D} ${CY + 0.21 * D}`, fill: 'none', stroke: cfg.ink, 'stroke-width': Math.max(2, D / 65), 'stroke-linecap': 'round' }));
-  svg.appendChild(g);
-  for (const side of ['left', 'right']) {
-    const tx = CX + (side === 'left' ? -1 : 1) * cfg.targetEcc;
-    let t;
+  ctx.fillStyle = cfg.ink; ctx.beginPath(); ctx.arc(CX, CY + 0.046 * D, Math.max(3, D / 52), 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = Math.max(2, D / 65); ctx.beginPath();
+  ctx.moveTo(CX - 0.173 * D, CY + 0.21 * D); ctx.quadraticCurveTo(CX, CY + 0.315 * D, CX + 0.173 * D, CY + 0.21 * D); ctx.stroke();
+  if (stim.target) {
+    const tx = CX + (stim.target === 'left' ? -1 : 1) * cfg.targetEcc;
+    ctx.fillStyle = cfg.ink;
     if (cfg.responseTask === 'discrimination') {
-      t = el('text', { x: tx, y: ey, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': cfg.targetSize * 1.5, 'font-family': 'Arial, Helvetica, sans-serif', 'font-weight': '700', fill: cfg.ink });
+      ctx.font = `700 ${cfg.targetSize * 1.5}px Arial, Helvetica, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(stim.letter || '', tx, ey);
     } else {
-      t = el('rect', { x: tx - cfg.targetSize / 2, y: ey - cfg.targetSize / 2, width: cfg.targetSize, height: cfg.targetSize, fill: cfg.ink });
+      ctx.fillRect(tx - cfg.targetSize / 2, ey - cfg.targetSize / 2, cfg.targetSize, cfg.targetSize);
     }
-    t.setAttribute('visibility', 'hidden');
-    svg.appendChild(t); parts.targets[side] = t;
   }
 }
 function setGaze(dir, frac = 1) {
   const s = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
-  for (const p of parts.pupils) p.setAttribute('cx', Number(p.dataset.ex) + s * cfg.pupilShift * frac);
+  stim.gaze = s * frac; draw();
 }
 function animateGaze(dir, start) {
   (async () => {
@@ -219,11 +226,8 @@ function animateGaze(dir, start) {
     setGaze(dir, 1);
   })();
 }
-const showFace = v => { svg.style.visibility = v ? 'visible' : 'hidden'; };
-function showTarget(side, letter) {
-  for (const s in parts.targets) parts.targets[s].setAttribute('visibility', s === side ? 'visible' : 'hidden');
-  if (side && letter) parts.targets[side].textContent = letter;
-}
+const showFace = v => { stim.face = !!v; draw(); };
+function showTarget(side, letter) { stim.target = side || null; stim.letter = letter || ''; draw(); }
 addEventListener('resize', () => { const g = currentGaze; buildStim(); setGaze(g); });
 let currentGaze = 'center';
 
@@ -232,7 +236,7 @@ let currentGaze = 'center';
    gaze: center|left|right   target: none|left|right   png=1 downloads the frame as PNG */
 if (url.get('frame') === '1') {
   document.body.classList.add('hidecursor');
-  buildStim();
+  buildStim(); showFace(true);
   const gaze = url.get('gaze') || 'center', target = url.get('target') || 'none';
   setGaze(gaze); currentGaze = gaze;
   showTarget(target === 'none' ? null : target, url.get('letter') || cfg.discrimTargets[0]);
@@ -240,14 +244,7 @@ if (url.get('frame') === '1') {
   return;
 }
 function downloadPng(name) {
-  const data = new XMLSerializer().serializeToString(svg);
-  const img = new Image();
-  img.onload = () => {
-    const c = document.createElement('canvas'); c.width = W; c.height = H;
-    const ctx = c.getContext('2d'); ctx.fillStyle = cfg.background; ctx.fillRect(0, 0, W, H); ctx.drawImage(img, 0, 0);
-    const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download = name; a.click();
-  };
-  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(data);
+  const a = document.createElement('a'); a.href = canvas.toDataURL('image/png'); a.download = name; a.click();
 }
 
 /* ---------------- trial list ---------------- */
