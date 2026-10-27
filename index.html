@@ -59,6 +59,7 @@ const DEFAULTS = {
   gazeShift: 'abrupt',            // 'abrupt' (one frame) | 'animated' (pupils glide over gazeAnimMs)
   gazeAnimMs: 120,
   targetTimeoutMs: 1500,          // response window after target onset
+  soaJitterMs: 0,                 // total uniform jitter around each SOA (200 = soa-100..soa+100); defeats rhythm responding
   catchHoldMs: 1500,              // how long a catch trial waits with no target
   itiMs: 700,                     // blank between trials
   itiJitterMs: 300,               // uniform jitter added to itiMs
@@ -75,6 +76,7 @@ const DEFAULTS = {
   blockBreaks: true,              // show a break screen between blocks
   practiceTrials: 12,
   practiceFeedback: true,
+  realFeedback: true,             // show 'Too early' after an anticipation in the real block (false = no feedback at all)
 
   // Geometry (px). About 40 px per degree on a 96 dpi laptop at 60 cm.
   faceDiameter: 260,
@@ -110,6 +112,11 @@ const PRESETS = {
              repsPerCell: 2, cueValidity: 0.5, blockDesign: 'balanced', blockBreaks: false,
              catchCount: 2, catchProportion: 0, practiceTrials: 2, itiMs: 600, itiJitterMs: 300 },
   full:  {},
+  // Study 1A (27 Oct 2026): target held up to 5 s, SOA 200..400 ms random, no feedback in real trials; otherwise the 16-trial pilot block.
+  study1a: { responseTask: 'detection', soas: [300], soaJitterMs: 200, directGazeMs: 1000, directGazeJitterMs: 400,
+             targetTimeoutMs: 5000, catchHoldMs: 5000, realFeedback: false,
+             repsPerCell: 4, cueValidity: 0.5, blockDesign: 'balanced', blockBreaks: false,
+             catchCount: 2, catchProportion: 0, practiceTrials: 2, itiMs: 600, itiJitterMs: 300 },
   short: { soas: [300], directGazeMs: 675, repsPerCell: 8, catchProportion: 0, blocks: 1,
            practiceTrials: 4, itiMs: 500, itiJitterMs: 200 },
 };
@@ -118,6 +125,7 @@ const PRESETS = {
 const url = new URLSearchParams(location.search);
 const presetName = url.get('preset') || DEFAULTS.preset;
 const cfg = Object.assign({}, DEFAULTS, PRESETS[presetName] || {}, { preset: presetName });
+window.__cfg = cfg;   // read-only view for tests
 for (const k of Object.keys(DEFAULTS)) {
   if (!url.has(k) || k === 'preset') continue;
   const v = url.get(k), d = DEFAULTS[k];
@@ -348,13 +356,14 @@ async function runTrial(t, practice) {
   drops = 0; lastPress = null; listening = true; hiddenDuringTrial = false;
   const itiIntended = cfg.itiMs + Math.random() * cfg.itiJitterMs;
   const directIntended = cfg.directGazeMs + (Math.random() - 0.5) * cfg.directGazeJitterMs;
+  const soaIntended = t.soa + (Math.random() - 0.5) * cfg.soaJitterMs;
   const rec = {
     pid: cfg.pid, study: cfg.study, code: session.code, block: t.block, trial: t.trial, type: t.type, gaze: t.gaze, target: t.target, letter: t.letter,
     soa: t.soa, congruent: t.congruent, prev_congruent: prevCongruent, prev_target: prevTarget,
     response: null, correct: null, rt_ms: null, anticipation: false, key_trusted: null,
     iti_intended: Math.round(itiIntended), iti_actual: null,
     direct_intended: Math.round(directIntended), direct_actual: null,
-    soa_intended: t.soa, soa_actual: null,
+    soa_intended: Math.round(soaIntended), soa_actual: null,
     dropped_frames: null, tab_hidden: false, t_target_onset: null,
   };
 
@@ -368,7 +377,7 @@ async function runTrial(t, practice) {
   if (cfg.gazeShift === 'animated') animateGaze(t.gaze, tCue); else setGaze(t.gaze);
   currentGaze = t.gaze;
   // 4. SOA, then target (or nothing on catch trials)
-  const tTarget = await waitUntil(tCue + t.soa);
+  const tTarget = await waitUntil(tCue + soaIntended);
   rec.iti_actual = +(tFace - t0).toFixed(1);
   rec.direct_actual = +(tCue - tFace).toFixed(1);
   rec.soa_actual = +(tTarget - tCue).toFixed(1);
@@ -409,7 +418,7 @@ async function runTrial(t, practice) {
     else if (rec.response === null) msg = 'Too slow';
     else msg = rec.correct ? 'Correct' : 'Wrong key';
     await feedback(msg);
-  } else if (!practice && rec.anticipation) {
+  } else if (!practice && rec.anticipation && cfg.realFeedback) {
     await feedback('Too early: wait for the target');   // anticipations are flagged even in the real block
   }
 }
