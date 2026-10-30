@@ -523,7 +523,7 @@ async function main() {
 
   const mins = estimateMinutes();
   await showText(`<h1>Attention task</h1>
-    <p>This task takes ${mins < 1.5 ? 'about a minute' : 'about ' + Math.round(mins) + ' minutes'}. Please sit about an arm's length from the screen, in a quiet place, and close other windows.</p>
+    <p>This task takes ${mins < 1.5 ? 'about a minute' : 'about ' + Math.round(mins) + ' minutes'}. Please sit about an arm's length from the screen, in a quiet place.</p>
     <p>You will respond with the keyboard, so make sure it is within reach.</p>
     <p class="muted">Participant: ${cfg.pid}</p>`,
     { button: 'Start' });
